@@ -1,5 +1,6 @@
 // Prisma Schema — Luxury Invoice Declaration Platform
 // Phase 1: Auth, Users, Organizations, KYC/KYB, Invite Codes
+// Phase 2: Invoice upload, OCR, fraud scoring
 
 generator client {
   provider = "prisma-client-js"
@@ -59,6 +60,26 @@ enum InviteCodeStatus {
   REVOKED
 }
 
+enum InvoiceStatus {
+  PENDING_UPLOAD    // Presigned URL issued, file not yet confirmed
+  UPLOADED          // S3 confirmed, OCR queued
+  OCR_PROCESSING    // Google Document AI running
+  OCR_DONE          // OCR complete, fraud check queued
+  FRAUD_REVIEW      // Flagged for human review
+  APPROVED          // Cashback eligible
+  REJECTED          // Rejected — reseller notified
+  BLACKLISTED       // Invoice blacklisted (fraud confirmed)
+}
+
+enum InvoiceCurrency {
+  EUR
+  USD
+  GBP
+  CNY
+  JPY
+  CHF
+}
+
 // ─────────────────────────────────────────────
 // ORGANIZATION
 // An org has one KYB; its resellers each do KYC only
@@ -76,6 +97,7 @@ model Organization {
   cashbackRate  Decimal    @default(0) @db.Decimal(5, 4) // e.g. 0.0300 = 3%
 
   members       User[]
+  invoices      Invoice[]
   inviteCodes   InviteCode[]
   auditLogs     AuditLog[]
 
@@ -169,18 +191,65 @@ model InviteCode {
 }
 
 // ─────────────────────────────────────────────
-// INVOICE (stub for Phase 2 — FK only here)
+// INVOICE — full Phase 2 model
 // ─────────────────────────────────────────────
 
 model Invoice {
-  id            String   @id @default(uuid())
+  id            String          @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id])
+  user          User            @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization  Organization?   @relation(fields: [organizationId], references: [id])
 
-  // Full fields added in Phase 2 migration
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  // File storage
+  s3Key         String?         // Object key in S3 (e.g. invoices/{userId}/{uuid}.pdf)
+  s3Bucket      String?
+  originalFilename String?
+  mimeType      String?         // application/pdf | image/jpeg | image/png
+  fileSizeBytes Int?
 
+  // Status machine
+  status        InvoiceStatus   @default(PENDING_UPLOAD)
+
+  // OCR-extracted fields (nullable until OCR completes)
+  invoiceNumber     String?
+  purchaseDate      DateTime?
+  vendorName        String?
+  vendorAddress     String?
+  brandName         String?     // e.g. "Chanel", "Louis Vuitton"
+  storeLocation     String?     // e.g. "Chanel Boutique Printemps Haussmann"
+  itemDescription   String?
+  itemCategory      String?     // e.g. "handbag", "watch", "jewellery"
+  currency          InvoiceCurrency?
+  subtotalAmount    Decimal?    @db.Decimal(12, 2)
+  taxAmount         Decimal?    @db.Decimal(12, 2)
+  grandTotalAmount  Decimal?    @db.Decimal(12, 2)
+  cashbackAmount    Decimal?    @db.Decimal(12, 2) // calculated after approval
+
+  // OCR confidence / quality
+  ocrConfidence     Float?      // 0.0 – 1.0 overall confidence from Document AI
+  ocrRawJson        Json?       // full Document AI response (retained for audit)
+
+  // Fraud scoring
+  fraudScore        Float?      // 0.0 = clean, 1.0 = definite fraud
+  fraudFlags        Json?       // array of triggered rule names
+  reviewNote        String?     // reviewer's free-text note
+
+  // Timestamps
+  uploadedAt    DateTime?
+  ocrCompletedAt DateTime?
+  reviewedAt    DateTime?
+  reviewedById  String?
+
+  deletedAt     DateTime?       // GDPR soft delete
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([purchaseDate])
+  @@index([vendorName])
   @@map("invoices")
 }
 

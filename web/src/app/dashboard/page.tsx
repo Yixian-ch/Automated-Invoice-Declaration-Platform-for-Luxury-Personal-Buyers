@@ -1,17 +1,64 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { invoiceApi, type Invoice } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+
+const STATUS_LABEL: Record<string, string> = {
+  PENDING_UPLOAD: 'Pending',
+  UPLOADED: 'Uploaded',
+  OCR_PROCESSING: 'Processing',
+  OCR_DONE: 'OCR Done',
+  FRAUD_REVIEW: 'Under Review',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  BLACKLISTED: 'Blacklisted',
+};
+
+const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  PENDING_UPLOAD: 'outline',
+  UPLOADED: 'secondary',
+  OCR_PROCESSING: 'secondary',
+  OCR_DONE: 'secondary',
+  FRAUD_REVIEW: 'outline',
+  APPROVED: 'default',
+  REJECTED: 'destructive',
+  BLACKLISTED: 'destructive',
+};
 
 export default function DashboardPage() {
-  const { user, isLoading, logout } = useAuth();
+  const { user, isLoading, logout, accessToken } = useAuth();
   const router = useRouter();
+
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [total, setTotal] = useState(0);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+
+  const loadInvoices = useCallback(async () => {
+    if (!accessToken) return;
+    setInvoicesLoading(true);
+    try {
+      const res = await invoiceApi.list(accessToken);
+      setInvoices(res.items);
+      setTotal(res.total);
+    } catch {
+      // non-fatal — table stays empty
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }, [accessToken]);
 
   useEffect(() => {
     if (!isLoading && !user) router.push('/login');
     if (!isLoading && user && user.kycStatus === 'NOT_STARTED') router.push('/onboarding');
   }, [user, isLoading, router]);
+
+  useEffect(() => {
+    if (user && accessToken) loadInvoices();
+  }, [user, accessToken, loadInvoices]);
 
   if (isLoading || !user) {
     return (
@@ -20,6 +67,12 @@ export default function DashboardPage() {
       </main>
     );
   }
+
+  const approved = invoices.filter((i) => i.status === 'APPROVED').length;
+  const pending = invoices.filter((i) =>
+    ['UPLOADED', 'OCR_PROCESSING', 'OCR_DONE', 'FRAUD_REVIEW'].includes(i.status),
+  ).length;
+  const totalCashback = invoices.reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -56,19 +109,32 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div>
-          <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-            Dashboard
-          </h1>
-          <div className="w-8 h-px bg-gold mt-3" />
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
+              Dashboard
+            </h1>
+            <div className="w-8 h-px bg-gold mt-3" />
+          </div>
+          {user.kycStatus === 'APPROVED' && (
+            <Button
+              onClick={() => router.push('/dashboard/upload')}
+              style={{ backgroundColor: '#B8966E', color: 'white' }}
+            >
+              Upload Invoice
+            </Button>
+          )}
         </div>
 
-        {/* Stat cards — placeholder for Phase 2 */}
+        {/* Stat cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: 'Invoices Submitted', value: '—' },
-            { label: 'Pending Review', value: '—' },
-            { label: 'Total Cashback', value: '—' },
+            { label: 'Invoices Submitted', value: total > 0 ? String(total) : '—' },
+            { label: 'Pending Review', value: pending > 0 ? String(pending) : '—' },
+            {
+              label: 'Total Cashback',
+              value: totalCashback > 0 ? `€${totalCashback.toFixed(2)}` : '—',
+            },
           ].map((stat) => (
             <div key={stat.label} className="card-luxury space-y-2">
               <p className="text-xs tracking-widest uppercase text-muted">{stat.label}</p>
@@ -79,14 +145,89 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Invoice table placeholder */}
+        {/* Invoice table */}
         <div className="card-luxury">
-          <p className="text-xs tracking-widest uppercase text-muted mb-6">Recent Invoices</p>
-          <div className="text-center py-12 text-muted text-sm">
-            Invoice upload will be available in Phase 2.
+          <div className="flex items-center justify-between mb-6">
+            <p className="text-xs tracking-widest uppercase text-muted">Recent Invoices</p>
+            {invoices.length > 0 && (
+              <button
+                onClick={loadInvoices}
+                className="text-xs text-[#B8966E] hover:underline"
+              >
+                Refresh
+              </button>
+            )}
           </div>
+
+          {invoicesLoading ? (
+            <div className="text-center py-10 text-muted text-sm">Loading…</div>
+          ) : invoices.length === 0 ? (
+            <div className="text-center py-12 space-y-3">
+              <p className="text-muted text-sm">No invoices yet.</p>
+              {user.kycStatus === 'APPROVED' && (
+                <button
+                  onClick={() => router.push('/dashboard/upload')}
+                  className="text-sm text-[#B8966E] hover:underline"
+                >
+                  Upload your first invoice →
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-stone-100 text-xs text-muted uppercase tracking-wider">
+                    <th className="text-left pb-3 font-normal">Filename</th>
+                    <th className="text-left pb-3 font-normal">Brand</th>
+                    <th className="text-left pb-3 font-normal">Date</th>
+                    <th className="text-right pb-3 font-normal">Amount</th>
+                    <th className="text-right pb-3 font-normal">Cashback</th>
+                    <th className="text-right pb-3 font-normal">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map((inv) => (
+                    <tr
+                      key={inv.id}
+                      className="border-b border-stone-50 hover:bg-stone-50/60 cursor-pointer"
+                      onClick={() => router.push(`/dashboard/invoices/${inv.id}`)}
+                    >
+                      <td className="py-3 pr-4 max-w-[180px] truncate text-stone-700">
+                        {inv.originalFilename ?? '—'}
+                      </td>
+                      <td className="py-3 pr-4 text-stone-600">
+                        {inv.brandName ?? '—'}
+                      </td>
+                      <td className="py-3 pr-4 text-stone-500 text-xs">
+                        {inv.purchaseDate
+                          ? new Date(inv.purchaseDate).toLocaleDateString('fr-FR')
+                          : '—'}
+                      </td>
+                      <td className="py-3 pr-4 text-right text-stone-700">
+                        {inv.grandTotalAmount
+                          ? `${inv.currency ?? ''} ${Number(inv.grandTotalAmount).toFixed(2)}`
+                          : '—'}
+                      </td>
+                      <td className="py-3 pr-4 text-right text-[#B8966E]">
+                        {inv.cashbackAmount
+                          ? `€${Number(inv.cashbackAmount).toFixed(2)}`
+                          : '—'}
+                      </td>
+                      <td className="py-3 text-right">
+                        <Badge variant={STATUS_VARIANT[inv.status] ?? 'outline'}>
+                          {STATUS_LABEL[inv.status] ?? inv.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </main>
   );
 }
+
