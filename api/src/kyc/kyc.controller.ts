@@ -1,5 +1,6 @@
-import { Controller, Post, Body, UseGuards, RawBodyRequest, Req, Headers, BadRequestException } from '@nestjs/common';
-import { Request } from 'express';
+import { Controller, Post, Body, UseGuards, Req, Headers, BadRequestException } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request } from 'express';
 import { KycService } from './kyc.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';

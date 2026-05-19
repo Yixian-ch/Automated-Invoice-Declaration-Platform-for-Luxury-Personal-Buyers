@@ -208,12 +208,14 @@ export class AuthService {
     const payload = { sub: userId, email, role };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.config.get<string>('JWT_SECRET'),
-        expiresIn: this.config.get<string>('JWT_EXPIRY') ?? '15m',
+        secret: this.config.get<string>('JWT_SECRET')!,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        expiresIn: (this.config.get<string>('JWT_EXPIRY') ?? '15m') as any,
       }),
       this.jwtService.signAsync(payload, {
-        secret: this.config.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRY') ?? '7d',
+        secret: this.config.get<string>('JWT_REFRESH_SECRET')!,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        expiresIn: (this.config.get<string>('JWT_REFRESH_EXPIRY') ?? '7d') as any,
       }),
     ]);
     return { accessToken, refreshToken };

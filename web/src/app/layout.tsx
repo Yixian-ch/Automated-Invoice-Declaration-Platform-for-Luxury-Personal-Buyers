@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Inter } from "next/font/google";
+import { Cormorant_Garamond, Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
@@ -27,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" className={`${cormorant.variable} ${inter.variable} h-full`}>
+    <html lang="fr" className={cn("h-full", cormorant.variable, inter.variable, "font-sans", geist.variable)}>
       <body className="min-h-full bg-surface text-ink font-sans antialiased">
         <AuthProvider>{children}</AuthProvider>
       </body>
