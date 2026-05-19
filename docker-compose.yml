@@ -1,0 +1,74 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lidp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lidp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lidp_dev_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-lidp_db}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-lidp}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lidp_redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: lidp_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lidp}:${POSTGRES_PASSWORD:-lidp_dev_secret}@postgres:5432/${POSTGRES_DB:-lidp_db}
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - ./api/.env
+    ports:
+      - '3001:3001'
+    volumes:
+      - ./api/src:/app/src
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: lidp_web
+    restart: unless-stopped
+    depends_on:
+      - api
+    env_file:
+      - ./web/.env.local
+    ports:
+      - '3000:3000'
+
+volumes:
+  postgres_data:
+  redis_data:

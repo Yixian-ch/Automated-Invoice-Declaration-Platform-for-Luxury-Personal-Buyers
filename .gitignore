@@ -1,3 +1,24 @@
+# ── Project-specific ────────────────────────────────────────────
+node_modules/
+api-deps/
+.env
+.env.local
+.env.*.local
+*.env
+dist/
+build/
+.next/
+out/
+coverage/
+uploads/
+service-account.json
+*-credentials.json
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+npm-debug.log*
+
+# ── Python (pre-existing) ────────────────────────────────────────
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

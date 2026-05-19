@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/* ── Design Tokens ─────────────────────────────────────────────── */
+:root {
+  /* Palette */
+  --color-surface:   #FAF9F7;   /* warm off-white background */
+  --color-ink:       #1A1A1A;   /* primary text */
+  --color-muted:     #8A8A8A;   /* secondary text */
+  --color-gold:      #B8966E;   /* accent */
+  --color-gold-dark: #9A7A52;   /* hover state */
+  --color-border:    #E8E4DF;   /* subtle borders */
+  --color-success:   #2D6A4F;
+  --color-error:     #9B2335;
+  --color-warning:   #B45309;
+
+  /* Typography */
+  --font-serif: var(--font-cormorant), "Cormorant Garamond", Georgia, serif;
+  --font-sans:  var(--font-inter), "Inter", system-ui, sans-serif;
+}
+
+/* ── Tailwind theme extension ───────────────────────────────────── */
+@theme inline {
+  --color-surface:    var(--color-surface);
+  --color-ink:        var(--color-ink);
+  --color-muted:      var(--color-muted);
+  --color-gold:       var(--color-gold);
+  --color-gold-dark:  var(--color-gold-dark);
+  --color-border:     var(--color-border);
+  --color-success:    var(--color-success);
+  --color-error:      var(--color-error);
+  --font-sans:        var(--font-sans);
+  --font-serif:       var(--font-serif);
+}
+
+/* ── Base ───────────────────────────────────────────────────────── */
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/* ── Utilities ──────────────────────────────────────────────────── */
+.input-luxury {
+  @apply w-full border border-border bg-white px-4 py-3 text-sm text-ink
+         placeholder:text-muted focus:outline-none focus:border-gold
+         transition-colors duration-200;
+}
+
+.btn-primary {
+  @apply bg-ink text-white text-sm tracking-widest uppercase px-8 py-3
+         hover:bg-gold transition-colors duration-200 disabled:opacity-40
+         disabled:cursor-not-allowed;
+}
+
+.btn-ghost {
+  @apply text-sm text-muted underline-offset-4 hover:text-ink hover:underline
+         transition-colors duration-200;
+}
+
+.card-luxury {
+  @apply bg-white border border-border p-8;
+}
+
+.status-pill {
+  @apply inline-flex items-center px-2.5 py-0.5 text-xs font-medium uppercase tracking-wider;
+}
+
