@@ -196,7 +196,8 @@ export class AuthService {
     const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
-    if (!user.emailVerifiedAt) {
+    const bypassEmailVerification = this.config.get<string>('BYPASS_EMAIL_VERIFICATION') === 'true';
+    if (!bypassEmailVerification && !user.emailVerifiedAt) {
       throw new UnauthorizedException('Please verify your email before logging in');
     }
 
