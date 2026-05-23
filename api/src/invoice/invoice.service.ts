@@ -168,9 +168,11 @@ export class InvoiceService {
   /**
    * Admin: list all invoices with optional status filter.
    */
-  async adminList(status?: string, page = 1, limit = 50) {
+  async adminList(status?: string, page = 1, limit = 50, userId?: string) {
     const skip = (page - 1) * limit;
-    const where = status ? { status: status as any } : {};
+    const where: any = {};
+    if (status) where.status = status;
+    if (userId) where.userId = userId;
 
     const [items, total] = await Promise.all([
       this.prisma.invoice.findMany({

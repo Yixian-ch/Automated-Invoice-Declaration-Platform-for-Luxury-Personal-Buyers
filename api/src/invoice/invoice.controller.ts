@@ -12,8 +12,12 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  Res,
+  NotFoundException,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -51,8 +55,31 @@ export class InvoiceController {
   @Put(':id/dev-sink')
   @Public()
   @HttpCode(HttpStatus.OK)
-  devSink(@Param('id') _id: string, @Req() _req: Request) {
+  async devSink(@Param('id') id: string, @Req() req: Request) {
+    const uploadsDir = path.resolve(process.cwd(), 'uploads');
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    const dest = path.join(uploadsDir, id);
+    await new Promise<void>((resolve, reject) => {
+      const ws = fs.createWriteStream(dest);
+      req.pipe(ws);
+      ws.on('finish', resolve);
+      ws.on('error', reject);
+    });
     return {};
+  }
+
+  /**
+   * GET /api/v1/invoices/:id/image
+   * Dev: serve locally saved file. In production this would return a presigned S3 URL.
+   */
+  @Get(':id/image')
+  @Public()
+  async serveImage(@Param('id') id: string, @Res() res: Response) {
+    const filePath = path.resolve(process.cwd(), 'uploads', id);
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException('Image not found');
+    }
+    res.sendFile(filePath);
   }
 
   /**
@@ -107,10 +134,11 @@ export class InvoiceController {
   @Roles(UserRole.ADMIN, UserRole.REVIEWER)
   async adminList(
     @Query('status') status?: string,
+    @Query('userId') userId?: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number = 50,
   ) {
-    return this.invoiceService.adminList(status, page, Math.min(limit, 200));
+    return this.invoiceService.adminList(status, page, Math.min(limit, 200), userId);
   }
 
   /**
