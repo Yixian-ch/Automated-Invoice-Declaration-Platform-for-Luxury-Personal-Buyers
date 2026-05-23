@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { adminApi, ReconciliationRow, DrillDownRow, MerchantBill } from '@/lib/api';
 import { toast } from 'sonner';
@@ -178,7 +178,7 @@ export default function AdminReconciliationPage() {
                 const isOpen = drillDown?.key === key;
                 const isMismatch = row.status === 'MISMATCH';
                 return (
-                  <>
+                  <Fragment key={key}>
                     <tr
                       key={key}
                       className={`border-b border-stone-100 ${isMismatch ? 'bg-red-50' : ''}`}
@@ -251,7 +251,7 @@ export default function AdminReconciliationPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

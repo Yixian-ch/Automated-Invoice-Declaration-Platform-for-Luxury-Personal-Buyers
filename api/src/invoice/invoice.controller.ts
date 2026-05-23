@@ -76,6 +76,7 @@ export class InvoiceController {
   @Public()
   async serveImage(@Param('id') id: string, @Res() res: Response) {
     const filePath = path.resolve(process.cwd(), 'uploads', id);
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     if (!fs.existsSync(filePath)) {
       throw new NotFoundException('Image not found');
     }
