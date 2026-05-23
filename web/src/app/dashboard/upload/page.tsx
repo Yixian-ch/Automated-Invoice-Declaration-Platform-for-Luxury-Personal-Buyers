@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { invoiceApi } from '@/lib/api';
@@ -24,7 +24,19 @@ export default function UploadPage() {
   const [step, setStep] = useState<UploadStep>('idle');
   const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [uploadedFilenames, setUploadedFilenames] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load existing invoice filenames to detect duplicates
+  useEffect(() => {
+    if (!accessToken) return;
+    invoiceApi.list(accessToken, 1).then((res) => {
+      const names = new Set(
+        res.items.map((inv) => inv.originalFilename).filter(Boolean) as string[],
+      );
+      setUploadedFilenames(names);
+    }).catch(() => { /* non-fatal */ });
+  }, [accessToken]);
 
   // ─── File selection ────────────────────────────────────────────────────────
 
@@ -59,6 +71,12 @@ export default function UploadPage() {
   const handleUpload = async () => {
     if (!file || !accessToken) return;
 
+    // Duplicate filename check
+    if (uploadedFilenames.has(file.name)) {
+      toast.error('Image already uploaded');
+      return;
+    }
+
     try {
       // 1. Request presigned URL from backend
       setStep('requesting');
@@ -83,9 +101,11 @@ export default function UploadPage() {
       setFile(null);
       if (inputRef.current) inputRef.current.value = '';
 
+      // Add to local duplicate set so a re-upload in same session is also blocked
+      setUploadedFilenames((prev) => new Set(prev).add(file.name));
+
       setStep('done');
-      toast.success('Invoice uploaded — OCR processing has started.');
-      setTimeout(() => router.push('/dashboard'), 1500);
+      setTimeout(() => router.push('/dashboard'), 2500);
     } catch (err) {
       setStep('error');
       toast.error(err instanceof Error ? err.message : 'Upload failed');
@@ -190,9 +210,13 @@ export default function UploadPage() {
             </p>
           )}
           {step === 'done' && (
-            <p className="text-sm text-[#B8966E] text-center font-medium">
-              ✓ Upload complete — redirecting to dashboard…
-            </p>
+            <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-5 text-center">
+              <p className="text-2xl mb-1">✅</p>
+              <p className="font-semibold text-green-800 text-base">Upload Successful</p>
+              <p className="text-sm text-green-700 mt-1">
+                Your invoice is queued for OCR processing. Redirecting…
+              </p>
+            </div>
           )}
 
           {/* CTA */}

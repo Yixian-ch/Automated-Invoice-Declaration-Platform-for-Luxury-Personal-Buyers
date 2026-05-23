@@ -3,6 +3,7 @@ import { Cormorant_Garamond, Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
+import { Toaster } from "sonner";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -33,6 +34,7 @@ export default function RootLayout({
     <html lang="fr" className={cn("h-full", cormorant.variable, inter.variable, "font-sans", geist.variable)}>
       <body className="min-h-full bg-surface text-ink font-sans antialiased">
         <AuthProvider>{children}</AuthProvider>
+        <Toaster richColors position="top-center" />
       </body>
     </html>
   );
