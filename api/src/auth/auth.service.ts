@@ -13,7 +13,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { UserStatus, InviteCodeStatus } from '@prisma/client';
+import { UserRole, UserStatus, InviteCodeStatus, AccountType } from '@prisma/client';
+import { MailService } from '../mail/mail.service';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -24,38 +25,106 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly mailService: MailService,
   ) {}
 
   // ─── Registration ────────────────────────────────────────────────────────────
 
   async register(dto: RegisterDto) {
-    // 1. Validate invite code
-    const invite = await this.prisma.inviteCode.findUnique({
-      where: { code: dto.inviteCode },
-      include: { organization: true },
-    });
-    if (!invite) throw new NotFoundException('Invalid invite code');
-    if (invite.status !== InviteCodeStatus.ACTIVE) {
-      throw new BadRequestException('Invite code is no longer valid');
-    }
-    if (invite.expiresAt < new Date()) {
-      await this.prisma.inviteCode.update({
-        where: { id: invite.id },
-        data: { status: InviteCodeStatus.EXPIRED },
-      });
-      throw new BadRequestException('Invite code has expired');
+    // Validate: must provide either inviteCode (Path B) or accountType (Path A)
+    if (!dto.inviteCode && !dto.accountType) {
+      throw new BadRequestException(
+        'Provide either an invite code (to join an organisation) or select an account type (to register as a new reseller).',
+      );
     }
 
-    // 2. Check email uniqueness
+    // 1. Check email uniqueness
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already registered');
 
-    // 3. Hash password
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const emailVerificationToken = uuidv4();
 
-    // 4. Create user
+    // ── Path B: invite-based registration ──────────────────────────────────────
+    if (dto.inviteCode) {
+      const invite = await this.prisma.inviteCode.findUnique({
+        where: { code: dto.inviteCode },
+        include: { organization: true },
+      });
+      if (!invite) throw new NotFoundException('Invalid invite code');
+      if (invite.status !== InviteCodeStatus.ACTIVE) {
+        throw new BadRequestException('Invite code is no longer valid');
+      }
+      if (invite.expiresAt < new Date()) {
+        await this.prisma.inviteCode.update({
+          where: { id: invite.id },
+          data: { status: InviteCodeStatus.EXPIRED },
+        });
+        throw new BadRequestException('Invite code has expired');
+      }
+
+      const user = await this.prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            email: dto.email,
+            passwordHash,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            phone: dto.phone,
+            locale: dto.locale ?? 'fr',
+            role: invite.intendedRole,
+            accountType: AccountType.INDIVIDUAL,
+            status: UserStatus.REGISTERED,
+            emailVerificationToken,
+            organizationId: invite.intendedOrgId ?? undefined,
+            registeredViaInvite: true,
+          },
+        });
+        await tx.inviteCode.update({
+          where: { id: invite.id },
+          data: {
+            status: InviteCodeStatus.USED,
+            usedByUserId: newUser.id,
+            usedAt: new Date(),
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorId: newUser.id,
+            actorRole: newUser.role,
+            action: 'USER_REGISTERED_VIA_INVITE',
+            resourceType: 'User',
+            resourceId: newUser.id,
+            userId: newUser.id,
+            organizationId: invite.intendedOrgId ?? undefined,
+          },
+        });
+        return newUser;
+      });
+
+      await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken);
+      return { message: 'Registration successful. Please verify your email.' };
+    }
+
+    // ── Path A: self-registration (new reseller or organisation) ───────────────
+    const isOrg = dto.accountType === 'ORGANIZATION';
+
     const user = await this.prisma.$transaction(async (tx) => {
+      // If registering as an organisation, create the org first
+      let orgId: string | undefined;
+      if (isOrg) {
+        if (!dto.companyName) {
+          throw new BadRequestException('Company name is required for organisation accounts');
+        }
+        const org = await tx.organization.create({
+          data: {
+            name: dto.companyName,
+            registrationNo: dto.companyRegistrationNo ?? undefined,
+          },
+        });
+        orgId = org.id;
+      }
+
       const newUser = await tx.user.create({
         data: {
           email: dto.email,
@@ -64,41 +133,30 @@ export class AuthService {
           lastName: dto.lastName,
           phone: dto.phone,
           locale: dto.locale ?? 'fr',
-          role: invite.intendedRole,
+          role: isOrg ? UserRole.ORG_ADMIN : UserRole.RESELLER,
+          accountType: isOrg ? AccountType.ORGANIZATION : AccountType.INDIVIDUAL,
           status: UserStatus.REGISTERED,
           emailVerificationToken,
-          organizationId: invite.intendedOrgId ?? undefined,
+          organizationId: orgId,
         },
       });
 
-      // Mark invite as used
-      await tx.inviteCode.update({
-        where: { id: invite.id },
-        data: {
-          status: InviteCodeStatus.USED,
-          usedByUserId: newUser.id,
-          usedAt: new Date(),
-        },
-      });
-
-      // Audit log
       await tx.auditLog.create({
         data: {
           actorId: newUser.id,
           actorRole: newUser.role,
-          action: 'USER_REGISTERED',
+          action: 'USER_SELF_REGISTERED',
           resourceType: 'User',
           resourceId: newUser.id,
           userId: newUser.id,
-          organizationId: invite.intendedOrgId ?? undefined,
+          organizationId: orgId,
         },
       });
 
       return newUser;
     });
 
-    // TODO: Send verification email with emailVerificationToken (Phase 5)
-
+    await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken);
     return { message: 'Registration successful. Please verify your email.' };
   }
 

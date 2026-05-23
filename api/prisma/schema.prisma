@@ -91,7 +91,7 @@ model Organization {
   registrationNo String?   // Business registration number
   country       String     @default("FR")
   kybStatus     KybStatus  @default(NOT_STARTED)
-  sumsubKybApplicantId String? // Sumsub applicant ID for KYB
+  diditKybSessionId String? // Didit session ID for KYB
 
   // Cashback configuration
   cashbackRate  Decimal    @default(0) @db.Decimal(5, 4) // e.g. 0.0300 = 3%
@@ -124,14 +124,17 @@ model User {
   status        UserStatus  @default(REGISTERED)
   accountType   AccountType @default(INDIVIDUAL)
 
+  // Registration path
+  registeredViaInvite Boolean @default(false)
+
   // KYC (all users who are resellers)
   kycStatus     KycStatus   @default(NOT_STARTED)
-  sumsubKycApplicantId String?
+  diditKycSessionId String?
   kycDocumentExpiresAt DateTime?
 
   // KYB (only INDIVIDUAL resellers, not org-linked resellers)
   kybStatus     KybStatus   @default(NOT_STARTED)
-  sumsubKybApplicantId String?
+  diditKybSessionId String?
   kybDocumentExpiresAt DateTime?
 
   // Cashback (for individuals not under an org)

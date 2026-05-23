@@ -34,6 +34,20 @@ services:
       timeout: 5s
       retries: 5
 
+  ocr-service:
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+    container_name: lidp_ocr
+    restart: unless-stopped
+    ports:
+      - '8000:8000'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   api:
     build:
       context: ./api
@@ -44,6 +58,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      ocr-service:
         condition: service_healthy
     environment:
       NODE_ENV: development

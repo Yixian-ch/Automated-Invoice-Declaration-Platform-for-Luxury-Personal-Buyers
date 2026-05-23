@@ -16,25 +16,26 @@ class StartKycDto {
 export class KycController {
   constructor(private readonly kycService: KycService) {}
 
-  /** Authenticated reseller requests a Sumsub SDK session token */
+  /** Authenticated reseller requests a Didit verification session URL */
   @UseGuards(JwtAuthGuard)
   @Post('session')
   startSession(
     @CurrentUser() user: { sub: string },
     @Body() dto: StartKycDto,
   ) {
-    const levelName = dto.type === 'kyb' ? 'basic-kyb-level' : 'basic-kyc-level';
-    return this.kycService.createSession(user.sub, levelName);
+    return this.kycService.createSession(user.sub, dto.type);
   }
 
-  /** Sumsub webhook — no auth guard, signature verified in service */
+  /** Didit webhook — no auth guard, signature verified inside service */
   @Post('webhook')
   async webhook(
     @Req() req: RawBodyRequest<Request>,
-    @Headers('x-payload-digest') signature: string,
+    @Headers('x-signature-v2') signatureV2: string,
+    @Headers('x-timestamp') timestamp: string,
   ) {
     if (!req.rawBody) throw new BadRequestException('Missing raw body');
-    await this.kycService.handleWebhook(req.rawBody.toString(), signature);
+    await this.kycService.handleWebhook(req.rawBody.toString(), signatureV2, timestamp);
     return { received: true };
   }
 }
+

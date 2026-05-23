@@ -9,6 +9,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { InviteModule } from './invite/invite.module';
 import { KycModule } from './kyc/kyc.module';
 import { InvoiceModule } from './invoice/invoice.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { InvoiceModule } from './invoice/invoice.module';
     InviteModule,
     KycModule,
     InvoiceModule,
+    MailModule,
   ],
 })
 export class AppModule {}

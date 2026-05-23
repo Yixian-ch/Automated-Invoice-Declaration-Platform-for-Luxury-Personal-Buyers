@@ -79,6 +79,10 @@ export default function UploadPage() {
       setStep('confirming');
       await invoiceApi.confirm(invoiceId, accessToken);
 
+      // Clear the form so the user cannot accidentally re-submit the same file
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = '';
+
       setStep('done');
       toast.success('Invoice uploaded — OCR processing has started.');
       setTimeout(() => router.push('/dashboard'), 1500);
