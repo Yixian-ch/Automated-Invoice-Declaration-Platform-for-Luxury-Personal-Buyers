@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Put,
   Get,
   Param,
   Body,
@@ -10,11 +11,14 @@ import {
   DefaultValuePipe,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { UserRole } from '@prisma/client';
 
 import { InvoiceService } from './invoice.service';
@@ -37,6 +41,18 @@ export class InvoiceController {
     @Body() dto: InitiateUploadDto,
   ) {
     return this.invoiceService.initiateUpload(user.id, dto);
+  }
+
+  /**
+   * PUT /api/v1/invoices/:id/dev-sink
+   * Dev-only: accepts the file upload in place of S3 (used when BYPASS_S3=true).
+   * No auth required — presigned URL is called directly by the browser.
+   */
+  @Put(':id/dev-sink')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  devSink(@Param('id') _id: string, @Req() _req: Request) {
+    return {};
   }
 
   /**

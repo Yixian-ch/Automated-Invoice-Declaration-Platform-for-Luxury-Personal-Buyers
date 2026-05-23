@@ -7,9 +7,9 @@ import {
 } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 
-import { PrismaService } from '../prisma/prisma.service';
-import { OcrService } from '../ocr/ocr.service';
-import { OCR_QUEUE } from '../invoice/invoice.service';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { OcrService } from '../ocr/ocr.service.js';
+import { OCR_QUEUE } from '../invoice/invoice.service.js';
 
 interface OcrJobData {
   invoiceId: string;
@@ -39,6 +39,10 @@ export class OcrProcessor {
     const { invoiceId } = job.data;
     this.logger.log(`Starting OCR for invoice ${invoiceId}`);
 
+    const bypassOcr =
+      this.config.get<string>('NODE_ENV') !== 'production' &&
+      this.config.get<string>('BYPASS_OCR') === 'true';
+
     // Mark as processing
     await this.prisma.invoice.update({
       where: { id: invoiceId },
@@ -51,28 +55,32 @@ export class OcrProcessor {
         where: { id: invoiceId },
       });
 
-      if (!invoice.s3Key || !invoice.s3Bucket) {
-        throw new Error(`Invoice ${invoiceId} has no S3 key`);
-      }
+      let buffer: Buffer;
 
-      // Download from S3
-      const s3Response = await this.s3.send(
-        new GetObjectCommand({ Bucket: invoice.s3Bucket, Key: invoice.s3Key }),
-      );
-
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of s3Response.Body as AsyncIterable<Uint8Array>) {
-        chunks.push(chunk);
+      if (bypassOcr) {
+        // Skip S3 download — OcrService will return mock data
+        this.logger.warn(`[DEV] BYPASS_OCR: skipping S3 download for invoice ${invoiceId}`);
+        buffer = Buffer.from('');
+      } else {
+        if (!invoice.s3Key || !invoice.s3Bucket) {
+          throw new Error(`Invoice ${invoiceId} has no S3 key`);
+        }
+        // Download from S3
+        const s3Response = await this.s3.send(
+          new GetObjectCommand({ Bucket: invoice.s3Bucket, Key: invoice.s3Key }),
+        );
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of s3Response.Body as AsyncIterable<Uint8Array>) {
+          chunks.push(chunk);
+        }
+        buffer = Buffer.concat(chunks);
       }
-      const buffer = Buffer.concat(chunks);
 
       // Run OCR
       const result = await this.ocrService.processDocument(
         buffer,
         invoice.mimeType ?? 'application/pdf',
       );
-
-      // Persist extracted fields
       await this.prisma.invoice.update({
         where: { id: invoiceId },
         data: {

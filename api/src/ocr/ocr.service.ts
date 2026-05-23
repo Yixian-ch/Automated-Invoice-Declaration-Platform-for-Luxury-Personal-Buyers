@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 
 export interface OcrLineItem {
   description: string;
@@ -24,103 +23,128 @@ export interface OcrResult {
   rawJson: Record<string, unknown>;
 }
 
+/** Shape returned by the Python OCR microservice */
+interface OcrServiceResponse {
+  invoice_number?: string;
+  purchase_date?: string;
+  vendor_name?: string;
+  vendor_address?: string;
+  brand_name?: string;
+  item_description?: string;
+  currency?: string;
+  subtotal_amount?: number;
+  tax_amount?: number;
+  grand_total_amount?: number;
+  confidence: number;
+  raw_text: string;
+}
+
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
-  private readonly client: DocumentProcessorServiceClient;
-  private readonly processorName: string;
+  private readonly serviceUrl: string;
+  private readonly bypassOcr: boolean;
 
   constructor(private readonly config: ConfigService) {
-    const projectId = this.config.get<string>('GOOGLE_PROJECT_ID', '');
-    const location = this.config.get<string>('GOOGLE_LOCATION', 'eu');
-    const processorId = this.config.get<string>('GOOGLE_PROCESSOR_ID', '');
-
-    // EU endpoint to keep data in-region (GDPR compliance)
-    const apiEndpoint = `${location}-documentai.googleapis.com`;
-    this.client = new DocumentProcessorServiceClient({ apiEndpoint });
-
-    this.processorName =
-      `projects/${projectId}/locations/${location}/processors/${processorId}`;
+    this.serviceUrl = config.get<string>('OCR_SERVICE_URL', 'http://localhost:8000');
+    this.bypassOcr =
+      config.get<string>('NODE_ENV') !== 'production' &&
+      config.get<string>('BYPASS_OCR') === 'true';
   }
 
-  /**
-   * Process a document buffer (PDF or image) through Google Document AI.
-   * Returns structured fields extracted from the invoice.
-   */
-  async processDocument(
-    content: Buffer,
-    mimeType: string,
-  ): Promise<OcrResult> {
+  async processDocument(content: Buffer, mimeType: string): Promise<OcrResult> {
+    if (this.bypassOcr) {
+      this.logger.warn('[DEV] BYPASS_OCR active — returning mock OCR result');
+      return this._mockResult();
+    }
+
     try {
-      const [result] = await this.client.processDocument({
-        name: this.processorName,
-        rawDocument: {
-          content: content.toString('base64'),
-          mimeType,
-        },
+      const body = JSON.stringify({
+        content: content.toString('base64'),
+        mime_type: mimeType,
       });
 
-      const document = result.document;
-      if (!document) {
-        throw new Error('No document in Document AI response');
+      const res = await fetch(`${this.serviceUrl}/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: AbortSignal.timeout(120_000), // 2 min timeout for large PDFs
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`OCR service responded ${res.status}: ${text}`);
       }
 
-      const entities = document.entities ?? [];
-      const rawJson = document as unknown as Record<string, unknown>;
-
-      // Extract fields from entities
-      const get = (type: string): string | undefined => {
-        const entity = entities.find((e) => e.type === type);
-        return entity?.mentionText?.trim() ?? undefined;
-      };
-
-      const getNum = (type: string): number | undefined => {
-        const raw = get(type);
-        if (!raw) return undefined;
-        const num = parseFloat(raw.replace(/[^0-9.,]/g, '').replace(',', '.'));
-        return isNaN(num) ? undefined : num;
-      };
-
-      // Calculate average confidence from entities
-      const confidenceValues = entities
-        .map((e) => e.confidence ?? 0)
-        .filter((c) => c > 0);
-      const confidence =
-        confidenceValues.length > 0
-          ? confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length
-          : 0;
-
-      // Parse purchase date
-      let purchaseDate: Date | undefined;
-      const dateStr = get('invoice_date') ?? get('receipt_date') ?? get('purchase_date');
-      if (dateStr) {
-        const parsed = new Date(dateStr);
-        if (!isNaN(parsed.getTime())) {
-          purchaseDate = parsed;
-        }
-      }
-
-      return {
-        invoiceNumber: get('invoice_id') ?? get('receipt_number'),
-        purchaseDate,
-        vendorName: get('supplier_name') ?? get('vendor_name') ?? get('merchant_name'),
-        vendorAddress: get('supplier_address') ?? get('vendor_address'),
-        brandName: get('brand_name') ?? get('manufacturer'),
-        itemDescription: get('line_item/description') ?? get('item_description'),
-        currency: get('currency') ?? get('currency_code'),
-        subtotalAmount: getNum('net_amount') ?? getNum('subtotal'),
-        taxAmount: getNum('total_tax_amount') ?? getNum('tax_amount'),
-        grandTotalAmount: getNum('total_amount') ?? getNum('grand_total'),
-        confidence,
-        rawJson,
-      };
+      const data = await res.json() as OcrServiceResponse;
+      return this._mapResponse(data);
     } catch (err) {
-      this.logger.error('Document AI processing failed', err);
-      // Return partial result so invoice is not stuck — caller marks as failed
-      return {
-        confidence: 0,
-        rawJson: { error: String(err) },
-      };
+      this.logger.error('OCR microservice call failed', err);
+      return { confidence: 0, rawJson: { error: String(err) } };
     }
   }
+
+  private _mapResponse(data: OcrServiceResponse): OcrResult {
+    let purchaseDate: Date | undefined;
+    if (data.purchase_date) {
+      const parsed = new Date(data.purchase_date);
+      if (!isNaN(parsed.getTime())) purchaseDate = parsed;
+    }
+
+    return {
+      invoiceNumber: data.invoice_number,
+      purchaseDate,
+      vendorName: data.vendor_name,
+      vendorAddress: data.vendor_address,
+      brandName: data.brand_name,
+      itemDescription: data.item_description,
+      currency: data.currency,
+      subtotalAmount: data.subtotal_amount,
+      taxAmount: data.tax_amount,
+      grandTotalAmount: data.grand_total_amount,
+      confidence: data.confidence,
+      rawJson: data as unknown as Record<string, unknown>,
+    };
+  }
+
+  private _mockResult(): OcrResult {
+    return {
+      invoiceNumber: `INV-DEV-${Date.now()}`,
+      purchaseDate: new Date(),
+      vendorName: 'Louis Vuitton Paris — Champs-Élysées',
+      vendorAddress: '101 Avenue des Champs-Élysées, 75008 Paris',
+      brandName: 'Louis Vuitton',
+      itemDescription: 'Sac Neverfull MM Monogram Canvas',
+      currency: 'EUR',
+      subtotalAmount: 1450.0,
+      taxAmount: 181.25,
+      grandTotalAmount: 1631.25,
+      confidence: 0.97,
+      rawJson: { mode: 'bypass', note: 'Set BYPASS_OCR=false to use real PaddleOCR' },
+    };
+  }
 }
+
+
+export interface OcrLineItem {
+  description: string;
+  quantity?: number;
+  unitPrice?: number;
+  totalPrice?: number;
+}
+
+export interface OcrResult {
+  invoiceNumber?: string;
+  purchaseDate?: Date;
+  vendorName?: string;
+  vendorAddress?: string;
+  brandName?: string;
+  itemDescription?: string;
+  currency?: string;
+  subtotalAmount?: number;
+  taxAmount?: number;
+  grandTotalAmount?: number;
+  confidence: number; // 0.0 – 1.0
+  rawJson: Record<string, unknown>;
+}
+

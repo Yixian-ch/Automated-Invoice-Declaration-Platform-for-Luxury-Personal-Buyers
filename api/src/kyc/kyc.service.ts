@@ -1,141 +1,236 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { KycStatus, KybStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 
+const DIDIT_API = 'https://verification.didit.me';
+
 /**
- * KYC/KYB module — integrates with Sumsub.
- * 
+ * KYC/KYB module — integrates with Didit (https://didit.me).
+ *
  * Flow:
- * 1. Frontend calls POST /kyc/session → this creates a Sumsub applicant + SDK token
- * 2. Frontend renders Sumsub Web SDK with the token
- * 3. Sumsub sends a webhook → POST /kyc/webhook → updates user KYC status
+ * 1. Frontend calls POST /kyc/session → backend creates a Didit session
+ *    and returns { sessionId, url } (the hosted verification URL on verify.didit.me)
+ * 2. Frontend embeds the URL in an iframe — Didit handles document capture,
+ *    liveness, and face match natively
+ * 3. Didit sends a webhook → POST /kyc/webhook → updates user KYC/KYB status
  */
 @Injectable()
 export class KycService {
-  private readonly sumsubBaseUrl: string;
-  private readonly appToken: string;
-  private readonly secretKey: string;
+  private readonly logger = new Logger(KycService.name);
+  private readonly apiKey: string;
+  private readonly kycWorkflowId: string;
+  private readonly kybWorkflowId: string;
+  private readonly webhookSecret: string;
+  private readonly appUrl: string;
+
+  private readonly bypassKyc: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.sumsubBaseUrl = config.get<string>('SUMSUB_BASE_URL') ?? 'https://api.sumsub.com';
-    this.appToken = config.get<string>('SUMSUB_APP_TOKEN') ?? '';
-    this.secretKey = config.get<string>('SUMSUB_SECRET_KEY') ?? '';
+    this.bypassKyc =
+      config.get<string>('NODE_ENV') !== 'production' &&
+      config.get<string>('BYPASS_KYC') === 'true';
+
+    if (this.bypassKyc) {
+      // In bypass mode Didit credentials are not required
+      this.apiKey = '';
+      this.kycWorkflowId = '';
+      this.kybWorkflowId = '';
+      this.webhookSecret = '';
+    } else {
+      this.apiKey = config.getOrThrow<string>('DIDIT_API_KEY');
+      this.kycWorkflowId = config.getOrThrow<string>('DIDIT_KYC_WORKFLOW_ID');
+      this.kybWorkflowId = config.getOrThrow<string>('DIDIT_KYB_WORKFLOW_ID');
+      this.webhookSecret = config.getOrThrow<string>('DIDIT_WEBHOOK_SECRET');
+    }
+    this.appUrl = config.get<string>('APP_URL') ?? 'http://localhost:3000';
   }
 
-  /**
-   * Sign a Sumsub API request (HMAC-SHA256).
-   * See: https://developers.sumsub.com/api-reference/#app-tokens
-   */
-  private signRequest(ts: number, method: string, path: string, body: string = '') {
-    const data = `${ts}${method.toUpperCase()}${path}${body}`;
-    return crypto.createHmac('sha256', this.secretKey).update(data).digest('hex');
-  }
+  // ─── Session creation ───────────────────────────────────────────────────────
 
-  private buildHeaders(method: string, path: string, body: string = '') {
-    const ts = Math.floor(Date.now() / 1000);
-    const signature = this.signRequest(ts, method, path, body);
-    return {
-      'X-App-Token': this.appToken,
-      'X-App-Access-Sig': signature,
-      'X-App-Access-Ts': String(ts),
-      'Content-Type': 'application/json',
+  async createSession(
+    userId: string,
+    type: 'kyc' | 'kyb',
+  ): Promise<{ sessionId: string; url: string }> {
+    // ── Dev bypass ────────────────────────────────────────────────────────────
+    if (this.bypassKyc) {
+      this.logger.warn(`[DEV] BYPASS_KYC active — auto-approving ${type} for userId=${userId}`);
+      if (type === 'kyb') {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { diditKybSessionId: 'dev-bypass', kybStatus: KybStatus.APPROVED },
+        });
+      } else {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { diditKycSessionId: 'dev-bypass', kycStatus: KycStatus.APPROVED },
+        });
+      }
+      return { sessionId: 'dev-bypass', url: '__bypass__' };
+    }
+
+    // ── Real Didit session ────────────────────────────────────────────────────
+    const workflowId = type === 'kyb' ? this.kybWorkflowId : this.kycWorkflowId;
+    const callback = `${this.appUrl}/onboarding/complete`;
+
+    const res = await fetch(`${DIDIT_API}/v3/session/`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': this.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_id: workflowId,
+        vendor_data: userId,
+        callback,
+      }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      this.logger.error(`Didit session creation failed: ${res.status} ${errorText}`);
+      throw new BadRequestException('Failed to create verification session');
+    }
+
+    const data = await res.json() as {
+      session_id: string;
+      url: string;
+      status: string;
     };
+
+    // Persist session ID only — status stays NOT_STARTED until Didit webhook fires
+    if (type === 'kyb') {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { diditKybSessionId: data.session_id },
+      });
+    } else {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { diditKycSessionId: data.session_id },
+      });
+    }
+
+    return { sessionId: data.session_id, url: data.url };
   }
 
-  /**
-   * Create or retrieve Sumsub applicant and return an SDK access token.
-   * levelName: 'basic-kyc-level' for KYC, 'basic-kyb-level' for KYB
-   */
-  async createSession(userId: string, levelName: string): Promise<{ token: string; userId: string }> {
-    const externalUserId = userId;
-
-    // 1. Create applicant
-    const createPath = `/resources/applicants?levelName=${levelName}`;
-    const createBody = JSON.stringify({ externalUserId });
-    const createHeaders = this.buildHeaders('POST', createPath, createBody);
-
-    const createRes = await fetch(`${this.sumsubBaseUrl}${createPath}`, {
-      method: 'POST',
-      headers: createHeaders,
-      body: createBody,
-    });
-    const applicant = await createRes.json() as { id: string };
-
-    // 2. Generate access token
-    const tokenPath = `/resources/accessTokens?userId=${externalUserId}&levelName=${levelName}`;
-    const tokenHeaders = this.buildHeaders('POST', tokenPath);
-    const tokenRes = await fetch(`${this.sumsubBaseUrl}${tokenPath}`, {
-      method: 'POST',
-      headers: tokenHeaders,
-    });
-    const tokenData = await tokenRes.json() as { token: string; userId: string };
-
-    // Store applicant ID on user
-    const isKyb = levelName.includes('kyb');
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: isKyb
-        ? { sumsubKybApplicantId: applicant.id, kybStatus: KybStatus.PENDING }
-        : { sumsubKycApplicantId: applicant.id, kycStatus: KycStatus.PENDING },
-    });
-
-    return tokenData;
-  }
+  // ─── Webhook handling ───────────────────────────────────────────────────────
 
   /**
-   * Handle Sumsub webhook — validates HMAC signature, updates user status.
+   * Verify Didit X-Signature-V2 and process status.updated events.
+   * V2 signs: JSON.stringify(sortKeys(shortenFloats(parsed_body))) with HMAC-SHA256
    */
-  async handleWebhook(rawBody: string, signature: string): Promise<void> {
-    // Verify webhook signature
-    const expectedSig = crypto
-      .createHmac('sha256', this.config.get<string>('SUMSUB_WEBHOOK_SECRET') ?? '')
-      .update(rawBody)
+  async handleWebhook(
+    rawBody: string,
+    signatureV2: string,
+    timestamp: string,
+  ): Promise<void> {
+    // 1. Replay protection — reject if > 5 minutes old
+    const ts = Number(timestamp);
+    if (!ts || Math.abs(Date.now() / 1000 - ts) > 300) {
+      throw new BadRequestException('Webhook timestamp out of range');
+    }
+
+    // 2. Canonical V2 signature verification
+    const parsed: unknown = JSON.parse(rawBody);
+    const canonical = JSON.stringify(sortKeys(shortenFloats(parsed)));
+    const expected = crypto
+      .createHmac('sha256', this.webhookSecret)
+      .update(canonical, 'utf8')
       .digest('hex');
 
-    if (expectedSig !== signature) {
+    const sigOk =
+      signatureV2.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureV2));
+
+    if (!sigOk) {
       throw new BadRequestException('Invalid webhook signature');
     }
 
-    const payload = JSON.parse(rawBody) as {
-      type: string;
-      externalUserId: string;
-      reviewStatus: string;
-      reviewResult?: { reviewAnswer: string };
-      applicantType?: string;
+    // 3. Dispatch
+    const event = parsed as {
+      webhook_type: string;
+      session_id: string;
+      status: string;
+      vendor_data: string;
     };
 
-    const userId = payload.externalUserId;
-    const answer = payload.reviewResult?.reviewAnswer;
-    const isKyb = payload.applicantType === 'company';
+    if (event.webhook_type !== 'status.updated') return; // ignore other events
 
-    if (payload.type === 'applicantReviewed') {
+    const userId = event.vendor_data;
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      this.logger.warn(`Didit webhook: unknown vendor_data userId=${userId}`);
+      return;
+    }
+
+    const isKyb = user.diditKybSessionId === event.session_id;
+    const newStatus = mapDigitStatus(event.status);
+
+    if (newStatus === null) return; // in-flight status, no DB update needed
+
+    await this.prisma.$transaction(async (tx) => {
       if (isKyb) {
-        await this.prisma.user.update({
-          where: { id: userId },
-          data: { kybStatus: answer === 'GREEN' ? KybStatus.APPROVED : KybStatus.FAILED },
-        });
+        await tx.user.update({ where: { id: userId }, data: { kybStatus: newStatus as KybStatus } });
       } else {
-        const newStatus = answer === 'GREEN' ? KycStatus.APPROVED : KycStatus.FAILED;
-        await this.prisma.user.update({
-          where: { id: userId },
-          data: { kycStatus: newStatus },
-        });
+        await tx.user.update({ where: { id: userId }, data: { kycStatus: newStatus as KycStatus } });
       }
-
-      await this.prisma.auditLog.create({
+      await tx.auditLog.create({
         data: {
           action: isKyb ? 'KYB_STATUS_UPDATED' : 'KYC_STATUS_UPDATED',
           resourceType: 'User',
           resourceId: userId,
           userId,
-          meta: { reviewAnswer: answer, type: payload.type },
+          meta: { diditStatus: event.status, sessionId: event.session_id },
         },
       });
-    }
+    });
+
+    this.logger.log(
+      `Didit webhook: userId=${userId} ${isKyb ? 'kyb' : 'kyc'} → ${event.status}`,
+    );
   }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Map Didit status string → our KycStatus / KybStatus enum value, or null to skip */
+function mapDigitStatus(status: string): KycStatus | KybStatus | null {
+  switch (status) {
+    case 'Approved':      return KycStatus.APPROVED;
+    case 'Declined':      return KycStatus.FAILED;
+    case 'In Review':     return KycStatus.PENDING;
+    case 'Resubmitted':   return KycStatus.PENDING;
+    default:              return null; // Not Started / In Progress / Awaiting User / Abandoned / Expired
+  }
+}
+
+/** Convert whole-number floats to integers (Didit V2 canonicalization). */
+function shortenFloats(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(shortenFloats);
+  if (v !== null && typeof v === 'object') {
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, shortenFloats(x)]),
+    );
+  }
+  if (typeof v === 'number' && !Number.isInteger(v) && v % 1 === 0) return Math.trunc(v);
+  return v;
+}
+
+/** Recursively sort object keys (arrays preserved in order). */
+function sortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v !== null && typeof v === 'object') {
+    return Object.keys(v as object)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, k) => {
+        acc[k] = sortKeys((v as Record<string, unknown>)[k]);
+        return acc;
+      }, {});
+  }
+  return v;
 }

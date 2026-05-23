@@ -28,7 +28,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     }),
   ],
   controllers: [InvoiceController],
-  providers: [InvoiceService, OcrProcessor],
+  providers: [InvoiceService, OcrProcessor, ConfigService],
   exports: [InvoiceService],
 })
 export class InvoiceModule {}

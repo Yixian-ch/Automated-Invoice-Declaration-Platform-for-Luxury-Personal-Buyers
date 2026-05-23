@@ -8,10 +8,10 @@ import { kycApi } from '@/lib/api';
 type Step = 'intro' | 'kyc' | 'kyb' | 'pending';
 
 export default function OnboardingPage() {
-  const { user, accessToken, isLoading } = useAuth();
+  const { user, accessToken, isLoading, refreshUser } = useAuth();
   const router = useRouter();
   const [step, setStep] = useState<Step>('intro');
-  const [sumsubToken, setSumsubToken] = useState<string | null>(null);
+  const [verifyUrl, setVerifyUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [launching, setLaunching] = useState(false);
 
@@ -27,7 +27,7 @@ export default function OnboardingPage() {
     setLaunching(true);
     try {
       const res = await kycApi.startSession('kyc', accessToken);
-      setSumsubToken(res.token);
+      setVerifyUrl(res.url);
       setStep('kyc');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start verification');
@@ -42,10 +42,10 @@ export default function OnboardingPage() {
     setLaunching(true);
     try {
       const res = await kycApi.startSession('kyb', accessToken);
-      setSumsubToken(res.token);
+      setVerifyUrl(res.url);
       setStep('kyb');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start verification');
+      setError(err instanceof Error ? err.message : 'Failed to start business verification');
     } finally {
       setLaunching(false);
     }
@@ -61,7 +61,7 @@ export default function OnboardingPage() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-4 py-16">
-      <div className="w-full max-w-lg space-y-10">
+      <div className="w-full max-w-2xl space-y-10">
 
         {/* Header */}
         <div className="text-center space-y-3">
@@ -70,22 +70,6 @@ export default function OnboardingPage() {
             Identity Verification
           </h1>
           <div className="w-8 h-px bg-gold mx-auto" />
-        </div>
-
-        {/* Step indicator */}
-        <div className="flex items-center justify-center gap-2">
-          {['intro', 'kyc', user.accountType === 'INDIVIDUAL' ? 'kyb' : null, 'pending']
-            .filter(Boolean)
-            .map((s, i) => (
-              <div key={s} className="flex items-center gap-2">
-                <div
-                  className={`w-2 h-2 rounded-full transition-colors ${
-                    step === s ? 'bg-gold' : 'bg-border'
-                  }`}
-                />
-                {i < 2 && <div className="w-8 h-px bg-border" />}
-              </div>
-            ))}
         </div>
 
         {error && (
@@ -104,7 +88,7 @@ export default function OnboardingPage() {
                   <span className="text-gold mt-0.5">—</span>
                   <span>Your identity via passport or national ID (KYC)</span>
                 </li>
-                {user.accountType === 'INDIVIDUAL' && (
+                {!user.registeredViaInvite && (
                   <li className="flex gap-3">
                     <span className="text-gold mt-0.5">—</span>
                     <span>Your business registration document (KYB)</span>
@@ -114,7 +98,7 @@ export default function OnboardingPage() {
             </div>
             <div className="border-t border-border pt-4">
               <p className="text-xs text-muted leading-relaxed">
-                Your documents are processed securely by Sumsub, our KYC/KYB partner. Data is stored in the EU and retained for 5 years per French AML law (CMF Art. L561-12). You may request deletion after your relationship with LIDP ends.
+                Your documents are processed securely by Didit, our KYC/KYB partner. Data is stored in the EU and retained for 5 years per French AML law (CMF Art. L561-12). You may request deletion after your relationship with LIDP ends.
               </p>
             </div>
             <button onClick={startKyc} disabled={launching} className="btn-primary w-full">
@@ -123,37 +107,53 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* KYC step — Sumsub SDK embedded */}
-        {(step === 'kyc' || step === 'kyb') && sumsubToken && (
-          <div className="card-luxury space-y-6">
+        {/* KYC / KYB step — Didit hosted iframe */}
+        {(step === 'kyc' || step === 'kyb') && verifyUrl && (
+          <div className="card-luxury space-y-4">
             <p className="text-xs tracking-widest uppercase text-muted">
               {step === 'kyc' ? 'Identity Verification' : 'Business Verification'}
             </p>
-            {/* Sumsub Web SDK iframe — the SDK replaces this placeholder */}
-            <div
-              id="sumsub-websdk-container"
-              className="min-h-[500px] flex items-center justify-center border border-border"
-            >
-              <div className="text-center space-y-3 p-8">
+
+            {/* Dev bypass mode */}
+            {verifyUrl === '__bypass__' ? (
+              <div className="border border-dashed border-gold/40 bg-gold/5 p-6 text-center space-y-3">
+                <p className="text-xs tracking-widest uppercase text-gold">Dev Mode — KYC Bypassed</p>
                 <p className="text-sm text-muted">
-                  Loading Sumsub verification widget…
+                  {step === 'kyc' ? 'KYC' : 'KYB'} auto-approved. Set <code className="text-xs bg-surface px-1 py-0.5">BYPASS_KYC=false</code> to use real Didit verification.
                 </p>
-                <p className="text-xs text-muted">Token: <span className="font-mono">{sumsubToken.slice(0, 12)}…</span></p>
-                <p className="text-xs text-muted mt-4">
-                  In production, the Sumsub Web SDK script is loaded here and mounts into{' '}
-                  <code className="font-mono">#sumsub-websdk-container</code>.
-                </p>
+                <button
+                  onClick={async () => {
+                    if (step === 'kyc' && !user.registeredViaInvite) {
+                      startKyb();
+                    } else {
+                      await refreshUser();
+                      router.push('/dashboard');
+                    }
+                  }}
+                  className="btn-primary text-sm"
+                >
+                  {step === 'kyc' && !user.registeredViaInvite ? 'Continue to Business Verification →' : 'Continue →'}
+                </button>
               </div>
-            </div>
-            {step === 'kyc' && user.accountType === 'INDIVIDUAL' && (
-              <button onClick={startKyb} disabled={launching} className="btn-primary w-full">
-                {launching ? 'Preparing…' : 'Continue to Business Verification'}
-              </button>
-            )}
-            {(step === 'kyb' || user.accountType !== 'INDIVIDUAL') && (
-              <button onClick={() => setStep('pending')} className="btn-primary w-full">
-                I&apos;ve completed verification
-              </button>
+            ) : (
+              <>
+                <iframe
+                  src={verifyUrl}
+                  allow="camera; microphone; fullscreen; autoplay; encrypted-media"
+                  className="w-full border-0"
+                  style={{ height: '620px', minHeight: '500px' }}
+                  title={step === 'kyc' ? 'Identity Verification' : 'Business Verification'}
+                />
+                {/* After KYC, self-registered users (no invite) must also do KYB */}
+                {step === 'kyc' && !user.registeredViaInvite && (
+                  <button onClick={startKyb} disabled={launching} className="btn-primary w-full">
+                    {launching ? 'Preparing…' : 'Continue to Business Verification'}
+                  </button>
+                )}
+                <button onClick={() => setStep('pending')} className="btn-ghost w-full text-sm">
+                  I&apos;ve completed verification — check back later
+                </button>
+              </>
             )}
           </div>
         )}
@@ -172,7 +172,7 @@ export default function OnboardingPage() {
                 Your documents are being reviewed. This typically takes 1–2 business days. You will receive an email when your account is approved.
               </p>
             </div>
-            <button onClick={() => router.push('/dashboard')} className="btn-ghost text-sm">
+            <button onClick={async () => { await refreshUser(); router.push('/dashboard'); }} className="btn-ghost text-sm">
               Return to dashboard
             </button>
           </div>

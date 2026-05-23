@@ -6,24 +6,33 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
+import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bull';
 import { v4 as uuidv4 } from 'uuid';
 
-import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
-import { InitiateUploadDto } from './dto/initiate-upload.dto';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { StorageService } from '../storage/storage.service.js';
+import { InitiateUploadDto } from './dto/initiate-upload.dto.js';
 
 export const OCR_QUEUE = 'ocr';
 
 @Injectable()
 export class InvoiceService {
   private readonly logger = new Logger(InvoiceService.name);
+  private readonly bypassS3: boolean;
+  private readonly appUrl: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly config: ConfigService,
     @InjectQueue(OCR_QUEUE) private readonly ocrQueue: Queue,
-  ) {}
+  ) {
+    this.bypassS3 =
+      config.get<string>('NODE_ENV') !== 'production' &&
+      config.get<string>('BYPASS_S3') === 'true';
+    this.appUrl = config.get<string>('API_URL', 'http://localhost:3001');
+  }
 
   /**
    * Step 1 — Create a PENDING_UPLOAD invoice record and return a presigned PUT URL.
@@ -31,13 +40,18 @@ export class InvoiceService {
    */
   async initiateUpload(userId: string, dto: InitiateUploadDto) {
     const invoiceId = uuidv4();
-    const s3Key = this.storage.buildInvoiceKey(userId, invoiceId, dto.originalFilename);
-    const bucket = this.storage.getBucketName();
+    const s3Key = this.bypassS3
+      ? `dev/bypass/${userId}/${invoiceId}`
+      : this.storage.buildInvoiceKey(userId, invoiceId, dto.originalFilename);
+    const bucket = this.bypassS3 ? 'dev-bypass' : this.storage.getBucketName();
 
-    const presignedUrl = await this.storage.getPresignedUploadUrl(
-      s3Key,
-      dto.mimeType,
-    );
+    const presignedUrl = this.bypassS3
+      ? `${this.appUrl}/api/v1/invoices/${invoiceId}/dev-sink`
+      : await this.storage.getPresignedUploadUrl(s3Key, dto.mimeType);
+
+    if (this.bypassS3) {
+      this.logger.warn(`[DEV] BYPASS_S3: returning dev-sink URL for invoice ${invoiceId}`);
+    }
 
     const invoice = await this.prisma.invoice.create({
       data: {
@@ -103,7 +117,7 @@ export class InvoiceService {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       this.prisma.invoice.findMany({
-        where: { userId, deletedAt: null },
+        where: { userId },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -126,7 +140,7 @@ export class InvoiceService {
           createdAt: true,
         },
       }),
-      this.prisma.invoice.count({ where: { userId, deletedAt: null } }),
+      this.prisma.invoice.count({ where: { userId } }),
     ]);
 
     return { items, total, page, limit };
@@ -140,7 +154,7 @@ export class InvoiceService {
       where: { id: invoiceId },
     });
 
-    if (!invoice || invoice.deletedAt) {
+    if (!invoice) {
       throw new NotFoundException('Invoice not found');
     }
 
@@ -156,10 +170,7 @@ export class InvoiceService {
    */
   async adminList(status?: string, page = 1, limit = 50) {
     const skip = (page - 1) * limit;
-    const where = {
-      deletedAt: null,
-      ...(status ? { status: status as any } : {}),
-    };
+    const where = status ? { status: status as any } : {};
 
     const [items, total] = await Promise.all([
       this.prisma.invoice.findMany({
@@ -243,7 +254,7 @@ export class InvoiceService {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
     });
-    if (!invoice || invoice.deletedAt) {
+    if (!invoice) {
       throw new NotFoundException('Invoice not found');
     }
     if (invoice.userId !== userId) {

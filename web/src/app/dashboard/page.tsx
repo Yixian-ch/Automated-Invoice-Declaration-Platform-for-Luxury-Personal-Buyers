@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { invoiceApi, type Invoice } from '@/lib/api';
@@ -36,6 +36,9 @@ export default function DashboardPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const IN_PROGRESS_STATUSES = ['PENDING_UPLOAD', 'UPLOADED', 'OCR_PROCESSING'];
 
   const loadInvoices = useCallback(async () => {
     if (!accessToken) return;
@@ -44,6 +47,7 @@ export default function DashboardPage() {
       const res = await invoiceApi.list(accessToken);
       setInvoices(res.items);
       setTotal(res.total);
+      return res.items;
     } catch {
       // non-fatal — table stays empty
     } finally {
@@ -59,6 +63,24 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user && accessToken) loadInvoices();
   }, [user, accessToken, loadInvoices]);
+
+  // Auto-poll while any invoice is still being processed
+  useEffect(() => {
+    const hasInProgress = invoices.some((i) =>
+      IN_PROGRESS_STATUSES.includes(i.status),
+    );
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (hasInProgress && accessToken) {
+      pollTimerRef.current = setTimeout(() => loadInvoices(), 4000);
+    }
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices, accessToken]);
 
   if (isLoading || !user) {
     return (
