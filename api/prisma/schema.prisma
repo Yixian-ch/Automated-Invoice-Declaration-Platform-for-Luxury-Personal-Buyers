@@ -257,6 +257,24 @@ model Invoice {
 }
 
 // ─────────────────────────────────────────────
+// MERCHANT BILL — imported from department store official billing data
+// Used for reconciliation (Module C)
+// ─────────────────────────────────────────────
+
+model MerchantBill {
+  id           String   @id @default(uuid())
+  merchantName String               // e.g. "Galeries Lafayette", "Printemps"
+  date         DateTime @db.Date    // billing date (day-level granularity)
+  totalAmount  Decimal  @db.Decimal(12, 2) // official total billed for that day
+  importedAt   DateTime @default(now())
+
+  @@unique([merchantName, date])
+  @@index([merchantName])
+  @@index([date])
+  @@map("merchant_bills")
+}
+
+// ─────────────────────────────────────────────
 // AUDIT LOG — immutable event trail (GDPR Art.5(2))
 // ─────────────────────────────────────────────
 
