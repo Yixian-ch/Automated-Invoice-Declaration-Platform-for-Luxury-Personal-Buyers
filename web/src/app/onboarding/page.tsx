@@ -26,9 +26,15 @@ export default function OnboardingPage() {
     setError('');
     setLaunching(true);
     try {
-      const res = await kycApi.startSession('kyc', accessToken);
-      setVerifyUrl(res.url);
-      setStep('kyc');
+      // Request a presigned upload URL for the passport photo
+      const fileName = 'passport.jpg';
+      const mimeType = 'image/jpeg';
+      const res = await kycApi.startSession('kyc', fileName, mimeType, accessToken);
+      // Upload directly to presigned URL
+      await fetch(res.presignedUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: new Blob() });
+      // Confirm upload (mark as pending review)
+      await kycApi.confirm(res.s3Key, accessToken);
+      setStep('pending');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start verification');
     } finally {
@@ -41,9 +47,15 @@ export default function OnboardingPage() {
     setError('');
     setLaunching(true);
     try {
-      const res = await kycApi.startSession('kyb', accessToken);
-      setVerifyUrl(res.url);
-      setStep('kyb');
+      // Request a presigned upload URL for the business document
+      const fileName = 'business.pdf';
+      const mimeType = 'application/pdf';
+      const res = await kycApi.startSession('kyb', fileName, mimeType, accessToken);
+      // Upload directly to presigned URL (placeholder blob)
+      await fetch(res.presignedUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: new Blob() });
+      // Confirm upload (mark as pending review)
+      await kycApi.confirm(res.s3Key, accessToken);
+      setStep('pending');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start business verification');
     } finally {

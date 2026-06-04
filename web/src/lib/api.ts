@@ -112,12 +112,17 @@ export const inviteApi = {
 // ─── KYC ─────────────────────────────────────────────────────────────────────
 
 export const kycApi = {
-  startSession: (type: 'kyc' | 'kyb', token: string) =>
-    request<{ sessionId: string; url: string }>('/kyc/session', {
-      method: 'POST',
-      body: { type },
-      token,
-    }),
+  startSession: (type: 'kyc' | 'kyb', originalFilename: string, mimeType: string, token: string) =>
+    request<{ uploadId: string; presignedUrl: string; s3Key: string }>(
+      '/kyc/session',
+      { method: 'POST', body: { type, originalFilename, mimeType }, token },
+    ),
+  confirm: (s3Key: string, token: string) =>
+    request('/kyc/confirm', { method: 'POST', body: { s3Key }, token }),
+  adminApprove: (userId: string, note: string | undefined, token: string) =>
+    request(`/kyc/${encodeURIComponent(userId)}/approve`, { method: 'POST', body: { note }, token }),
+  adminReject: (userId: string, note: string | undefined, token: string) =>
+    request(`/kyc/${encodeURIComponent(userId)}/reject`, { method: 'POST', body: { note }, token }),
 };
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────

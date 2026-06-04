@@ -87,4 +87,13 @@ export class StorageService {
     const sanitised = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
     return `invoices/${userId}/${invoiceId}/${sanitised}`;
   }
+
+  /**
+   * Build the canonical S3 key for a KYC document upload.
+   * Pattern: kyc/{userId}/{uploadId}/{filename}
+   */
+  buildKycKey(userId: string, uploadId: string, filename: string): string {
+    const sanitised = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return `kyc/${userId}/${uploadId}/${sanitised}`;
+  }
 }

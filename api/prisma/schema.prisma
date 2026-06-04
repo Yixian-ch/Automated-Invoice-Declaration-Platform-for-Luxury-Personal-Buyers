@@ -131,6 +131,7 @@ model User {
   kycStatus     KycStatus   @default(NOT_STARTED)
   diditKycSessionId String?
   kycDocumentExpiresAt DateTime?
+  kycDocumentKey String?
 
   // KYB (only INDIVIDUAL resellers, not org-linked resellers)
   kybStatus     KybStatus   @default(NOT_STARTED)
