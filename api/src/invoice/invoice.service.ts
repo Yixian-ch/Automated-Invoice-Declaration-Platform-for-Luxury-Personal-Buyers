@@ -199,7 +199,7 @@ export class InvoiceService {
   /**
    * Admin: manually approve an invoice and calculate cashback.
    */
-  async approve(adminId: string, invoiceId: string, note?: string) {
+  async approve(adminId: string, invoiceId: string, note?: string, recalculate = false) {
     const invoice = await this.prisma.invoice.findUniqueOrThrow({
       where: { id: invoiceId },
       include: { user: true },
