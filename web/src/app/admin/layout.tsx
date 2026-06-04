@@ -17,12 +17,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!isLoading && (!user || user.role !== 'ADMIN')) {
+    if (!isLoading && (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))) {
       router.replace('/dashboard');
     }
   }, [user, isLoading, router]);
 
-  if (isLoading || !user || user.role !== 'ADMIN') return null;
+  if (isLoading || !user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) return null;
 
   return (
     <div className="min-h-screen flex bg-[#FAF9F7]">
@@ -49,11 +49,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
-        <div className="px-5 py-4 border-t border-stone-100">
-          <Link href="/dashboard" className="text-xs text-stone-400 hover:text-stone-600">
-            ← Back to Dashboard
-          </Link>
-        </div>
       </aside>
 
       {/* Main content */}
