@@ -19,10 +19,10 @@ COPY requirements.txt .
 
 # Create venv with uv and install deps
 RUN uv venv .venv
+RUN uv pip install --python .venv/bin/python --no-cache setuptools
+# Pin numpy<2.0 first; PaddlePaddle 2.6.x is compiled against the 1.x ABI
+RUN uv pip install --python .venv/bin/python --no-cache "numpy>=1.20.0,<2.0"
 RUN uv pip install --python .venv/bin/python --no-cache -r requirements.txt
-
-# Pre-download PaddleOCR models so container starts fast
-RUN .venv/bin/python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='en')"
 
 COPY main.py .
 

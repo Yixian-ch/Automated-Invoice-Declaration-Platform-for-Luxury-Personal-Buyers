@@ -1,15 +1,18 @@
-'use client';
+"use client";
+
+export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api';
 
 type Status = 'verifying' | 'success' | 'error';
 
 export default function VerifyEmailPage() {
-  const searchParams = useSearchParams();
-  const token = searchParams.get('token');
+  const [token, setToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('token');
+  });
   const [status, setStatus] = useState<Status>('verifying');
   const [message, setMessage] = useState('');
 

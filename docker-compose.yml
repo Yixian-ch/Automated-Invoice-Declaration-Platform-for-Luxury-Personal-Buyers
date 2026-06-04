@@ -41,7 +41,7 @@ services:
     container_name: lidp_ocr
     restart: unless-stopped
     ports:
-      - '8000:8000'
+      - '8001:8000'
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
       interval: 30s

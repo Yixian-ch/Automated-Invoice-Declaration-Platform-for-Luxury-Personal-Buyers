@@ -6,6 +6,8 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OcrService } from '../ocr/ocr.service.js';
@@ -57,10 +59,22 @@ export class OcrProcessor {
 
       let buffer: Buffer;
 
+      const bypassS3 =
+        this.config.get<string>('NODE_ENV') !== 'production' &&
+        this.config.get<string>('BYPASS_S3') === 'true';
+
       if (bypassOcr) {
         // Skip S3 download — OcrService will return mock data
         this.logger.warn(`[DEV] BYPASS_OCR: skipping S3 download for invoice ${invoiceId}`);
         buffer = Buffer.from('');
+      } else if (bypassS3) {
+        // BYPASS_S3=true, BYPASS_OCR=false: read from local uploads dir (written by dev-sink)
+        const localPath = path.resolve(process.cwd(), 'uploads', invoiceId);
+        this.logger.warn(`[DEV] BYPASS_S3: reading file from local path ${localPath}`);
+        if (!fs.existsSync(localPath)) {
+          throw new Error(`[DEV] Local file not found for invoice ${invoiceId} at ${localPath}`);
+        }
+        buffer = fs.readFileSync(localPath);
       } else {
         if (!invoice.s3Key || !invoice.s3Bucket) {
           throw new Error(`Invoice ${invoiceId} has no S3 key`);

@@ -135,7 +135,6 @@ export class InvoiceService {
           grandTotalAmount: true,
           cashbackAmount: true,
           ocrConfidence: true,
-          fraudScore: true,
           uploadedAt: true,
           createdAt: true,
         },

@@ -146,7 +146,6 @@ export type Invoice = {
   grandTotalAmount: string | null;
   cashbackAmount: string | null;
   ocrConfidence: number | null;
-  fraudScore: number | null;
   uploadedAt: string | null;
   createdAt: string;
 };

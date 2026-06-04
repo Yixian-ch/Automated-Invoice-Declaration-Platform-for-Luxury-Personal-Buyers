@@ -234,7 +234,6 @@ model Invoice {
   ocrRawJson        Json?       // full Document AI response (retained for audit)
 
   // Fraud scoring
-  fraudScore        Float?      // 0.0 = clean, 1.0 = definite fraud
   fraudFlags        Json?       // array of triggered rule names
   reviewNote        String?     // reviewer's free-text note
 
