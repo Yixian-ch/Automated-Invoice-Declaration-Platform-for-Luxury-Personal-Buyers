@@ -9,13 +9,13 @@ import { Button } from '@/components/ui/button';
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_UPLOAD: 'Pending',
-  UPLOADED: 'Uploaded',
-  OCR_PROCESSING: 'Processing',
-  OCR_DONE: 'OCR Done',
-  FRAUD_REVIEW: 'Under Review',
+  UPLOADED: 'Pending',
+  OCR_PROCESSING: 'Pending',
+  OCR_DONE: 'Pending',
+  FRAUD_REVIEW: 'Reviewing',
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
-  BLACKLISTED: 'Blacklisted',
+  BLACKLISTED: 'Rejected',
 };
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -92,9 +92,11 @@ export default function DashboardPage() {
 
   const approved = invoices.filter((i) => i.status === 'APPROVED').length;
   const pending = invoices.filter((i) =>
-    ['UPLOADED', 'OCR_PROCESSING', 'OCR_DONE', 'FRAUD_REVIEW'].includes(i.status),
+    ['PENDING_UPLOAD', 'UPLOADED', 'OCR_PROCESSING', 'OCR_DONE', 'FRAUD_REVIEW'].includes(i.status),
   ).length;
-  const totalCashback = invoices.reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);
+  const totalCashback = invoices
+    .filter((i) => i.status === 'APPROVED')
+    .reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -200,8 +202,8 @@ export default function DashboardPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-stone-100 text-xs text-muted uppercase tracking-wider">
-                    <th className="text-left pb-3 font-normal">Filename</th>
-                    <th className="text-left pb-3 font-normal">Brand</th>
+                    <th className="text-left pb-3 font-normal">Store</th>
+                    <th className="text-left pb-3 font-normal">Items</th>
                     <th className="text-left pb-3 font-normal">Date</th>
                     <th className="text-right pb-3 font-normal">Amount</th>
                     <th className="text-right pb-3 font-normal">Cashback</th>
@@ -216,10 +218,10 @@ export default function DashboardPage() {
                       onClick={() => router.push(`/dashboard/invoices/${inv.id}`)}
                     >
                       <td className="py-3 pr-4 max-w-[180px] truncate text-stone-700">
-                        {inv.originalFilename ?? '—'}
+                        {inv.vendorName ?? '—'}
                       </td>
                       <td className="py-3 pr-4 text-stone-600">
-                        {inv.brandName ?? '—'}
+                        {'—'}
                       </td>
                       <td className="py-3 pr-4 text-stone-500 text-xs">
                         {inv.purchaseDate
