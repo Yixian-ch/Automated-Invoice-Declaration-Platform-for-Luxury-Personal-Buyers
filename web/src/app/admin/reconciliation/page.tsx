@@ -333,30 +333,37 @@ export default function AdminReconciliationPage() {
             )}
           </div>
 
-          {/* Existing bills list */}
-          {bills.length > 0 && (
-            <div className="border-t border-stone-100 pt-3">
-              <p className="text-xs text-stone-500 mb-2">Existing bills ({bills.length})</p>
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-stone-100 text-stone-400">
-                    <th className="text-left py-1 pr-4">Merchant</th>
-                    <th className="text-left py-1 pr-4">Date</th>
-                    <th className="text-right py-1">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bills.map((b) => (
-                    <tr key={b.id} className="border-b border-stone-50">
-                      <td className="py-1 pr-4 text-stone-600">{b.merchantName}</td>
-                      <td className="py-1 pr-4 text-stone-500">{new Date(b.date).toLocaleDateString('fr-FR')}</td>
-                      <td className="py-1 text-right text-stone-700">€{Number(b.totalAmount).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        </div>
+      )}
+
+      {/* Imported merchant bills — always visible so data doesn't appear lost after refresh */}
+      {bills.length > 0 && (
+        <div className="bg-white border border-stone-200 rounded-lg p-5">
+          <h2 className="text-sm font-medium text-stone-700 mb-3">
+            Imported Merchant Bills ({bills.length})
+          </h2>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-stone-200 text-xs text-stone-400 uppercase tracking-wider">
+                <th className="text-left py-2 pr-4">Merchant</th>
+                <th className="text-left py-2 pr-4">Date</th>
+                <th className="text-right py-2">Total Amount</th>
+                <th className="text-right py-2 pl-4">Imported At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bills.map((b) => (
+                <tr key={b.id} className="border-b border-stone-50">
+                  <td className="py-2 pr-4 text-stone-700">{b.merchantName}</td>
+                  <td className="py-2 pr-4 text-stone-500">{new Date(b.date).toLocaleDateString('fr-FR')}</td>
+                  <td className="py-2 text-right text-stone-700">€{Number(b.totalAmount).toFixed(2)}</td>
+                  <td className="py-2 pl-4 text-right text-stone-400 text-xs">
+                    {new Date(b.importedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
