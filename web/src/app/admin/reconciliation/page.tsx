@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/auth-context';
 import { adminApi, ReconciliationRow, DrillDownRow, MerchantBill } from '@/lib/api';
@@ -9,16 +9,26 @@ import { toast } from 'sonner';
 type ParsedRow = Record<string, string>;
 type FieldMap = { merchantName: string; date: string; totalAmount: string };
 
+type UnifiedRow = {
+  id: string;
+  merchantName: string;
+  date: string;          // YYYY-MM-DD
+  billTotal: number;
+  invoicesTotal: number;
+  status: 'MATCH' | 'MISMATCH';
+  hasInvoices: boolean;
+};
+
 export default function AdminReconciliationPage() {
   const { accessToken } = useAuth();
-  const [rows, setRows] = useState<ReconciliationRow[]>([]);
+  const [reconcRows, setReconcRows] = useState<ReconciliationRow[]>([]);
+  const [bills, setBills] = useState<MerchantBill[]>([]);
   const [loading, setLoading] = useState(true);
   const [drillDown, setDrillDown] = useState<{ key: string; rows: DrillDownRow[] } | null>(null);
   const [drillLoading, setDrillLoading] = useState(false);
 
-  const [importing, setImporting] = useState(false);
-  const [bills, setBills] = useState<MerchantBill[]>([]);
   const [showImport, setShowImport] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // Excel upload state
   const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
@@ -31,37 +41,69 @@ export default function AdminReconciliationPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [importText, setImportText] = useState('');
 
-  const loadReconciliation = async () => {
+  const loadAll = async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const data = await adminApi.getReconciliation(accessToken);
-      setRows(data);
-    } catch {
-      toast.error('Failed to load reconciliation data');
+      const [reconcData, billsData] = await Promise.all([
+        adminApi.getReconciliation(accessToken).catch(() => [] as ReconciliationRow[]),
+        adminApi.listMerchantBills(accessToken).catch(() => [] as MerchantBill[]),
+      ]);
+      setReconcRows(reconcData);
+      setBills(billsData);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadBills = async () => {
-    if (!accessToken) return;
-    const data = await adminApi.listMerchantBills(accessToken).catch(() => []);
-    setBills(data);
-  };
+  useEffect(() => { loadAll(); }, [accessToken]);
 
-  useEffect(() => {
-    loadReconciliation();
-    loadBills();
-  }, [accessToken]);
+  // Merge bills + reconciliation rows on the frontend so every bill appears,
+  // even when no approved invoices exist for that merchant/date.
+  const unifiedRows = useMemo<UnifiedRow[]>(() => {
+    const reconcMap = new Map<string, ReconciliationRow>();
+    for (const row of reconcRows) {
+      reconcMap.set(`${row.merchant_name}|${row.invoice_date}`, row);
+    }
 
-  const handleDrillDown = async (row: ReconciliationRow) => {
-    const key = `${row.merchant_name}|${row.invoice_date}`;
+    return bills
+      .map((bill) => {
+        const dateStr = bill.date.slice(0, 10); // "2026-05-08T00:00:00.000Z" → "2026-05-08"
+        const reconcRow = reconcMap.get(`${bill.merchantName}|${dateStr}`);
+
+        const billTotal = Number(bill.totalAmount);
+        const invoicesTotal = reconcRow ? Number(reconcRow.invoices_total) : 0;
+
+        // ±1% tolerance
+        const isMatch =
+          reconcRow !== undefined &&
+          billTotal > 0 &&
+          Math.abs(invoicesTotal - billTotal) / billTotal <= 0.01;
+
+        return {
+          id: bill.id,
+          merchantName: bill.merchantName,
+          date: dateStr,
+          billTotal,
+          invoicesTotal,
+          status: isMatch ? ('MATCH' as const) : ('MISMATCH' as const),
+          hasInvoices: reconcRow !== undefined,
+        };
+      })
+      .sort((a, b) => {
+        // Mismatches first, then by date desc
+        if (a.status !== b.status) return a.status === 'MISMATCH' ? -1 : 1;
+        return b.date.localeCompare(a.date);
+      });
+  }, [bills, reconcRows]);
+
+  const handleDrillDown = async (row: UnifiedRow) => {
+    const key = `${row.merchantName}|${row.date}`;
     if (drillDown?.key === key) { setDrillDown(null); return; }
     if (!accessToken) return;
     setDrillLoading(true);
     try {
-      const data = await adminApi.getDrillDown(accessToken, row.merchant_name, row.invoice_date);
+      const data = await adminApi.getDrillDown(accessToken, row.merchantName, row.date);
       setDrillDown({ key, rows: data });
     } catch {
       toast.error('Failed to load transactions');
@@ -92,14 +134,10 @@ export default function AdminReconciliationPage() {
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonRows: ParsedRow[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        if (jsonRows.length === 0) {
-          toast.error('File is empty or unreadable');
-          return;
-        }
+        if (jsonRows.length === 0) { toast.error('File is empty or unreadable'); return; }
         const headers = Object.keys(jsonRows[0]);
         setParsedHeaders(headers);
         setParsedRows(jsonRows);
-        // Auto-detect columns by common names
         const autoMatch = (candidates: string[]) =>
           headers.find((h) => candidates.some((c) => h.toLowerCase().includes(c))) ?? '';
         setFieldMap({
@@ -128,21 +166,20 @@ export default function AdminReconciliationPage() {
     if (!accessToken || !mappingComplete) return;
     setImporting(true);
     try {
-      const payload = parsedRows.map((r) => ({
-        merchantName: String(r[fieldMap.merchantName] ?? '').trim(),
-        date: String(r[fieldMap.date] ?? '').trim(),
-        totalAmount: parseFloat(String(r[fieldMap.totalAmount] ?? '0').replace(/[^0-9.-]/g, '')),
-      })).filter((b) => b.merchantName && b.date && !isNaN(b.totalAmount));
+      const payload = parsedRows
+        .map((r) => ({
+          merchantName: String(r[fieldMap.merchantName] ?? '').trim(),
+          date: String(r[fieldMap.date] ?? '').trim(),
+          totalAmount: parseFloat(String(r[fieldMap.totalAmount] ?? '0').replace(/[^0-9.-]/g, '')),
+        }))
+        .filter((b) => b.merchantName && b.date && !isNaN(b.totalAmount));
 
-      if (payload.length === 0) {
-        toast.error('No valid rows found after mapping');
-        return;
-      }
+      if (payload.length === 0) { toast.error('No valid rows found after mapping'); return; }
       const result = await adminApi.importMerchantBills(accessToken, payload);
       toast.success(`Imported ${result.imported} bill(s)`);
       resetFile();
-      loadBills();
-      loadReconciliation();
+      setShowImport(false);
+      loadAll();
     } catch (e: any) {
       toast.error(e.message ?? 'Import failed');
     } finally {
@@ -158,8 +195,8 @@ export default function AdminReconciliationPage() {
       const result = await adminApi.importMerchantBills(accessToken, parsed);
       toast.success(`Imported ${result.imported} bill(s)`);
       setImportText('');
-      loadBills();
-      loadReconciliation();
+      setShowImport(false);
+      loadAll();
     } catch (e: any) {
       toast.error(e.message ?? 'Invalid JSON or import failed');
     } finally {
@@ -169,6 +206,7 @@ export default function AdminReconciliationPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-stone-800">Bill Check (Reconciliation)</h1>
@@ -178,7 +216,7 @@ export default function AdminReconciliationPage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={loadReconciliation}
+            onClick={loadAll}
             className="px-3 py-1.5 text-sm border border-stone-200 rounded hover:bg-stone-50"
           >
             Refresh
@@ -195,7 +233,6 @@ export default function AdminReconciliationPage() {
       {/* Import panel */}
       {showImport && (
         <div className="bg-white border border-stone-200 rounded-lg p-5 space-y-4">
-          {/* File Upload Step */}
           {parsedHeaders.length === 0 ? (
             <div>
               <p className="text-sm font-medium text-stone-700 mb-3">
@@ -222,7 +259,6 @@ export default function AdminReconciliationPage() {
               </div>
             </div>
           ) : (
-            /* Field Mapping Step */
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-stone-700">
@@ -260,7 +296,6 @@ export default function AdminReconciliationPage() {
                 })}
               </div>
 
-              {/* Preview */}
               {mappingComplete && (
                 <div>
                   <p className="text-xs text-stone-400 mb-2">Preview (first 5 rows)</p>
@@ -332,48 +367,16 @@ export default function AdminReconciliationPage() {
               </div>
             )}
           </div>
-
         </div>
       )}
 
-      {/* Imported merchant bills — always visible so data doesn't appear lost after refresh */}
-      {bills.length > 0 && (
-        <div className="bg-white border border-stone-200 rounded-lg p-5">
-          <h2 className="text-sm font-medium text-stone-700 mb-3">
-            Imported Merchant Bills ({bills.length})
-          </h2>
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-stone-200 text-xs text-stone-400 uppercase tracking-wider">
-                <th className="text-left py-2 pr-4">Merchant</th>
-                <th className="text-left py-2 pr-4">Date</th>
-                <th className="text-right py-2">Total Amount</th>
-                <th className="text-right py-2 pl-4">Imported At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bills.map((b) => (
-                <tr key={b.id} className="border-b border-stone-50">
-                  <td className="py-2 pr-4 text-stone-700">{b.merchantName}</td>
-                  <td className="py-2 pr-4 text-stone-500">{new Date(b.date).toLocaleDateString('fr-FR')}</td>
-                  <td className="py-2 text-right text-stone-700">€{Number(b.totalAmount).toFixed(2)}</td>
-                  <td className="py-2 pl-4 text-right text-stone-400 text-xs">
-                    {new Date(b.importedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Reconciliation table */}
+      {/* Single reconciliation table — shows every imported bill */}
       <div className="bg-white border border-stone-200 rounded-lg overflow-x-auto">
         {loading ? (
           <div className="p-6 text-sm text-stone-400">Loading…</div>
-        ) : rows.length === 0 ? (
+        ) : unifiedRows.length === 0 ? (
           <div className="p-8 text-center text-stone-400 text-sm">
-            No reconciliation data. Import merchant bills first, then approve invoices.
+            No merchant bills imported yet. Click "Import Bills" to get started.
           </div>
         ) : (
           <table className="w-full text-sm border-collapse">
@@ -388,23 +391,20 @@ export default function AdminReconciliationPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const key = `${row.merchant_name}|${row.invoice_date}`;
+              {unifiedRows.map((row) => {
+                const key = `${row.merchantName}|${row.date}`;
                 const isOpen = drillDown?.key === key;
                 const isMismatch = row.status === 'MISMATCH';
                 return (
                   <Fragment key={key}>
-                    <tr
-                      key={key}
-                      className={`border-b border-stone-100 ${isMismatch ? 'bg-red-50' : ''}`}
-                    >
-                      <td className="px-4 py-3 text-stone-700">{row.merchant_name}</td>
-                      <td className="px-4 py-3 text-stone-500">{row.invoice_date}</td>
+                    <tr className={`border-b border-stone-100 ${isMismatch ? 'bg-red-50' : ''}`}>
+                      <td className="px-4 py-3 text-stone-700">{row.merchantName}</td>
+                      <td className="px-4 py-3 text-stone-500">{row.date}</td>
                       <td className="px-4 py-3 text-right text-stone-700">
-                        €{Number(row.invoices_total).toFixed(2)}
+                        €{row.invoicesTotal.toFixed(2)}
                       </td>
                       <td className="px-4 py-3 text-right text-stone-700">
-                        €{Number(row.bill_total).toFixed(2)}
+                        €{row.billTotal.toFixed(2)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {isMismatch ? (
@@ -414,7 +414,7 @@ export default function AdminReconciliationPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {isMismatch && (
+                        {row.hasInvoices && isMismatch && (
                           <button
                             onClick={() => handleDrillDown(row)}
                             className="text-xs text-[#B8966E] underline hover:no-underline"
