@@ -45,6 +45,12 @@ export class OcrProcessor {
       this.config.get<string>('NODE_ENV') !== 'production' &&
       this.config.get<string>('BYPASS_OCR') === 'true';
 
+    // Mark as processing
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { status: 'OCR_PROCESSING' },
+    });
+
     try {
       // Fetch invoice record
       const invoice = await this.prisma.invoice.findUniqueOrThrow({
@@ -89,34 +95,38 @@ export class OcrProcessor {
         buffer,
         invoice.mimeType ?? 'application/pdf',
       );
-
-      // Status stays PENDING — OCR only fills in field data.
-      // needsReview=true is recorded in reviewReasons for the admin UI; no status change.
       await this.prisma.invoice.update({
         where: { id: invoiceId },
         data: {
+          status: 'OCR_DONE',
+          invoiceNumber: result.invoiceNumber,
           purchaseDate: result.purchaseDate,
-          vendorName: result.vendorName ?? result.merchantName,
+          vendorName: result.vendorName,
+          vendorAddress: result.vendorAddress,
           brandName: result.brandName,
+          itemDescription: result.itemDescription,
           currency: this.mapCurrency(result.currency) as any,
+          subtotalAmount: result.subtotalAmount,
+          taxAmount: result.taxAmount,
           grandTotalAmount: result.grandTotalAmount,
           ocrConfidence: result.confidence,
           ocrRawJson: result.rawJson as any,
           ocrCompletedAt: new Date(),
-          lineItems: result.lineItems.length > 0 ? (result.lineItems as any) : undefined,
-          arithmeticCheck: result.arithmeticCheck ?? undefined,
-          needsReview: result.needsReview,
-          reviewReasons: result.reviewReasons,
         },
       });
 
       this.logger.log(
-        `OCR complete for invoice ${invoiceId} — needsReview=${result.needsReview} confidence=${result.confidence.toFixed(2)}`,
+        `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}`,
       );
     } catch (err) {
       this.logger.error(`OCR failed for invoice ${invoiceId}`, err);
 
-      // Re-throw so Bull marks the job as failed and retries (status stays PENDING)
+      await this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data: { status: 'UPLOADED' }, // reset so a retry can be triggered
+      });
+
+      // Re-throw so Bull marks the job as failed and retries
       throw err;
     }
   }
