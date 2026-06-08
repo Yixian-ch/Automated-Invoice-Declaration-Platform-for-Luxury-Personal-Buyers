@@ -281,4 +281,7 @@ export const adminApi = {
       body: data,
       token,
     }),
+
+  deleteInvoice: (token: string, invoiceId: string) =>
+    request<void>(`/invoices/${invoiceId}`, { method: 'DELETE', token }),
 };

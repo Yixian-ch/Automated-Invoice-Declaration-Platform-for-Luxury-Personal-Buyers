@@ -3,6 +3,7 @@ import {
   Post,
   Put,
   Patch,
+  Delete,
   Get,
   Param,
   Body,
@@ -189,5 +190,16 @@ export class InvoiceController {
     @Body() dto: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
   ) {
     return this.invoiceService.correctInvoice(id, dto);
+  }
+
+  /**
+   * DELETE /api/v1/invoices/:id
+   * Admin: permanently delete an invoice record.
+   */
+  @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteInvoice(@Param('id') id: string) {
+    return this.invoiceService.deleteInvoice(id);
   }
 }

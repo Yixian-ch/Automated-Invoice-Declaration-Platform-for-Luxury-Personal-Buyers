@@ -89,6 +89,19 @@ export default function AdminReviewPage() {
     }
   };
 
+  const handleDelete = async (invoiceId: string) => {
+    if (!accessToken) return;
+    if (!window.confirm('确认删除这张小票？此操作不可撤销。')) return;
+    try {
+      await adminApi.deleteInvoice(accessToken, invoiceId);
+      toast.success('Invoice deleted');
+      if (selected?.id === invoiceId) setSelected(null);
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to delete invoice');
+    }
+  };
+
   const handleCorrect = async () => {
     if (!accessToken || !selected || !correction) return;
     setCorrecting(true);
@@ -122,30 +135,38 @@ export default function AdminReviewPage() {
             <div className="p-6 text-sm text-stone-400 text-center">No invoices pending review.</div>
           ) : (
             invoices.map((inv) => (
-              <button
-                key={inv.id}
-                onClick={() => { setSelected(inv); setNote(''); }}
-                className={`w-full text-left px-4 py-3 border-b border-stone-100 hover:bg-amber-50 transition-colors ${
-                  selected?.id === inv.id ? 'bg-amber-50 border-l-2 border-l-[#B8966E]' : ''
-                }`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <p className="text-sm font-medium text-stone-700 truncate">
-                    {inv.originalFilename ?? inv.id.slice(0, 8)}
+              <div key={inv.id} className="relative group border-b border-stone-100">
+                <button
+                  onClick={() => { setSelected(inv); setNote(''); }}
+                  className={`w-full text-left px-4 py-3 hover:bg-amber-50 transition-colors ${
+                    selected?.id === inv.id ? 'bg-amber-50 border-l-2 border-l-[#B8966E]' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 pr-6">
+                    <p className="text-sm font-medium text-stone-700 truncate">
+                      {inv.originalFilename ?? inv.id.slice(0, 8)}
+                    </p>
+                    {inv.needsReview && (
+                      <span className="shrink-0 text-[10px] font-semibold text-white bg-red-500 rounded px-1 py-0.5 leading-none">
+                        需人工介入
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    {inv.user.firstName} {inv.user.lastName}
                   </p>
-                  {inv.needsReview && (
-                    <span className="shrink-0 text-[10px] font-semibold text-white bg-red-500 rounded px-1 py-0.5 leading-none">
-                      需人工介入
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-stone-400 mt-0.5">
-                  {inv.user.firstName} {inv.user.lastName}
-                </p>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  {inv.grandTotalAmount ? `€${Number(inv.grandTotalAmount).toFixed(2)}` : '—'}
-                </p>
-              </button>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    {inv.grandTotalAmount ? `€${Number(inv.grandTotalAmount).toFixed(2)}` : '—'}
+                  </p>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete(inv.id); }}
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-stone-300 hover:text-red-500 text-xs px-1"
+                  title="Delete invoice"
+                >
+                  ✕
+                </button>
+              </div>
             ))
           )}
         </div>
