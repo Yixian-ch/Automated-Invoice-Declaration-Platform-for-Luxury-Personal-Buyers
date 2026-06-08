@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { adminApi, AdminInvoice } from '@/lib/api';
+import { adminApi, AdminInvoice, LineItem } from '@/lib/api';
 import { toast } from 'sonner';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -204,7 +204,6 @@ export default function AdminReviewPage() {
                       ['Merchant', selected.vendorName ?? '—'],
                       ['Date', selected.purchaseDate ? new Date(selected.purchaseDate).toLocaleDateString('fr-FR') : '—'],
                       ['Amount', selected.grandTotalAmount ? `${selected.currency ?? ''} ${Number(selected.grandTotalAmount).toFixed(2)}` : '—'],
-                      ['Brand', selected.brandName ?? '—'],
                       ['OCR Confidence', selected.ocrConfidence != null ? `${(selected.ocrConfidence * 100).toFixed(0)}%` : '—'],
                       ['Buyer', `${selected.user.firstName} ${selected.user.lastName}`],
                       ['Email', selected.user.email],
@@ -217,6 +216,49 @@ export default function AdminReviewPage() {
                     ))}
                   </tbody>
                 </table>
+
+                {selected.needsReview && (
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
+                      需人工介入
+                    </span>
+                    {(selected.reviewReasons ?? []).map((r) => (
+                      <span key={r} className="inline-block px-2 py-0.5 rounded text-xs bg-red-50 text-red-600">
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {selected.lineItems && (selected.lineItems as LineItem[]).length > 0 && (
+                  <div className="mt-4">
+                    <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">Line Items</h3>
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-stone-200 text-stone-400 uppercase tracking-wider">
+                          <th className="text-left py-1.5 pr-3 font-medium">Description</th>
+                          <th className="text-right py-1.5 pr-3 font-medium">Quantité</th>
+                          <th className="text-right py-1.5 font-medium">Montant TTC</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(selected.lineItems as LineItem[]).map((item, i) => (
+                          <tr key={i} className="border-b border-stone-50">
+                            <td className="py-1.5 pr-3 text-stone-700">{item.description}</td>
+                            <td className="py-1.5 pr-3 text-right text-stone-600">
+                              {item.quantity != null ? item.quantity : '—'}
+                            </td>
+                            <td className="py-1.5 text-right text-stone-700">
+                              {item.amount_ttc != null
+                                ? `${selected.currency ?? '€'} ${Number(item.amount_ttc).toFixed(2)}`
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {correction && (

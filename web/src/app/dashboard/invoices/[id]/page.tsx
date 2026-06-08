@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { invoiceApi, type Invoice, type InvoiceStatus } from '@/lib/api';
+import { invoiceApi, type Invoice, type InvoiceStatus, type LineItem } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -150,7 +150,6 @@ export default function InvoiceDetailPage() {
 
               <div className="divide-y divide-stone-100">
                 <Field label="Store" value={invoice.vendorName} />
-                <Field label="Brand" value={invoice.brandName} />
                 <Field
                   label="Purchase Date"
                   value={
@@ -210,6 +209,39 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Line items table */}
+        {invoice.lineItems && invoice.lineItems.length > 0 && (
+          <div className="card-luxury mt-8">
+            <p className="text-xs tracking-widest uppercase text-muted mb-4">Line Items</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-stone-200 text-xs text-stone-400 uppercase tracking-wider">
+                    <th className="text-left py-2 pr-4 font-medium">Description</th>
+                    <th className="text-right py-2 pr-4 font-medium">Quantité</th>
+                    <th className="text-right py-2 font-medium">Montant TTC</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoice.lineItems.map((item: LineItem, i: number) => (
+                    <tr key={i} className="border-b border-stone-50">
+                      <td className="py-2 pr-4 text-stone-700">{item.description}</td>
+                      <td className="py-2 pr-4 text-right text-stone-600">
+                        {item.quantity != null ? item.quantity : '—'}
+                      </td>
+                      <td className="py-2 text-right text-stone-700">
+                        {item.amount_ttc != null
+                          ? `${invoice.currency ?? '€'} ${Number(item.amount_ttc).toFixed(2)}`
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
