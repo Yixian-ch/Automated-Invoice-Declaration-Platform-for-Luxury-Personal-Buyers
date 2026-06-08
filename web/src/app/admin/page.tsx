@@ -14,6 +14,7 @@ export default function AdminReviewPage() {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   const load = async () => {
     if (!accessToken) return;
@@ -34,6 +35,7 @@ export default function AdminReviewPage() {
   };
 
   useEffect(() => { load(); }, [accessToken]);
+  useEffect(() => { setImgError(false); }, [selected?.id]);
 
   const handleApprove = async () => {
     if (!accessToken || !selected) return;
@@ -115,12 +117,22 @@ export default function AdminReviewPage() {
           <div className="flex-1 bg-white border border-stone-200 rounded-lg flex gap-0 overflow-hidden">
             {/* Invoice image */}
             <div className="w-1/2 border-r border-stone-100 bg-stone-50 flex items-center justify-center p-4 overflow-auto">
-              <img
-                src={`${API_BASE}/api/v1/invoices/${selected.id}/image`}
-                alt="Invoice"
-                className="max-w-full max-h-full object-contain rounded shadow"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+              {imgError ? (
+                <div className="text-center space-y-2 text-stone-400">
+                  <p className="text-4xl">🧾</p>
+                  <p className="text-sm">Image not available</p>
+                  {selected.originalFilename && (
+                    <p className="text-xs text-stone-400">{selected.originalFilename}</p>
+                  )}
+                </div>
+              ) : (
+                <img
+                  src={`${API_BASE}/api/v1/invoices/${selected.id}/image`}
+                  alt="Invoice"
+                  className="max-w-full max-h-full object-contain rounded shadow"
+                  onError={() => setImgError(true)}
+                />
+              )}
             </div>
 
             {/* Extracted data + actions */}
