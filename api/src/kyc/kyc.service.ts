@@ -49,23 +49,24 @@ export class KycService {
 
   /** Confirm that the KYC document has been uploaded and mark for manual review */
   async confirmUpload(userId: string, s3Key: string) {
+    const newStatus = this.bypassKyc ? KycStatus.APPROVED : KycStatus.PENDING;
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         kycDocumentKey: s3Key,
-        kycStatus: KycStatus.PENDING,
+        kycStatus: newStatus,
       },
     });
     await this.prisma.auditLog.create({
       data: {
-        action: 'KYC_UPLOAD_CONFIRMED',
+        action: this.bypassKyc ? 'KYC_AUTO_APPROVED' : 'KYC_UPLOAD_CONFIRMED',
         resourceType: 'User',
         resourceId: userId,
         userId,
         meta: { s3Key },
       },
     });
-    this.logger.log(`KYC upload confirmed for user ${userId}`);
+    this.logger.log(`KYC upload confirmed for user ${userId} — status: ${newStatus}`);
   }
 
   /** Admin approves KYC */
