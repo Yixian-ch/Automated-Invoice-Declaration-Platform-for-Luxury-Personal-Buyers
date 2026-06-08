@@ -19,6 +19,8 @@ const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | '
   REJECTED: 'destructive',
 };
 
+const BYPASS_KYC = process.env.NEXT_PUBLIC_BYPASS_KYC === 'true';
+
 export default function DashboardPage() {
   const { user, isLoading, logout, accessToken } = useAuth();
   const router = useRouter();
@@ -85,7 +87,7 @@ export default function DashboardPage() {
       <div className="flex-1 px-8 py-12 max-w-5xl mx-auto w-full space-y-10">
 
         {/* KYC status banner */}
-        {user.kycStatus !== 'APPROVED' && (
+        {!BYPASS_KYC && user.kycStatus !== 'APPROVED' && (
           <div className="border border-warning/30 bg-warning/5 px-6 py-4 flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-warning">Identity Verification Required</p>
@@ -106,7 +108,7 @@ export default function DashboardPage() {
             </h1>
             <div className="w-8 h-px bg-gold mt-3" />
           </div>
-          {user.kycStatus === 'APPROVED' && (
+          {(BYPASS_KYC || user.kycStatus === 'APPROVED') && (
             <Button
               onClick={() => router.push('/dashboard/upload')}
               style={{ backgroundColor: '#B8966E', color: 'white' }}
@@ -154,7 +156,7 @@ export default function DashboardPage() {
           ) : invoices.length === 0 ? (
             <div className="text-center py-12 space-y-3">
               <p className="text-muted text-sm">No invoices yet.</p>
-              {user.kycStatus === 'APPROVED' && (
+              {(BYPASS_KYC || user.kycStatus === 'APPROVED') && (
                 <button
                   onClick={() => router.push('/dashboard/upload')}
                   className="text-sm text-[#B8966E] hover:underline"
