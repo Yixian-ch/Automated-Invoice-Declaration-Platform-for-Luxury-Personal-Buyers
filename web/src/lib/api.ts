@@ -127,16 +127,7 @@ export const kycApi = {
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
-export type InvoiceStatus =
-  | 'PENDING_UPLOAD'
-  | 'UPLOADED'
-  | 'OCR_PROCESSING'
-  | 'OCR_DONE'
-  | 'NEEDS_REVIEW'
-  | 'FRAUD_REVIEW'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'BLACKLISTED';
+export type InvoiceStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export type Invoice = {
   id: string;
@@ -152,6 +143,8 @@ export type Invoice = {
   grandTotalAmount: string | null;
   cashbackAmount: string | null;
   ocrConfidence: number | null;
+  needsReview: boolean | null;
+  reviewReasons: string[] | null;
   uploadedAt: string | null;
   createdAt: string;
 };

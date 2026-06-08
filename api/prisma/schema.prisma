@@ -61,15 +61,9 @@ enum InviteCodeStatus {
 }
 
 enum InvoiceStatus {
-  PENDING_UPLOAD    // Presigned URL issued, file not yet confirmed
-  UPLOADED          // S3 confirmed, OCR queued
-  OCR_PROCESSING    // Google Document AI running
-  OCR_DONE          // OCR complete, fraud check queued
-  NEEDS_REVIEW      // Core field confidence < 0.6 or arithmetic check failed
-  FRAUD_REVIEW      // Flagged for human review
-  APPROVED          // Cashback eligible
-  REJECTED          // Rejected — reseller notified
-  BLACKLISTED       // Invoice blacklisted (fraud confirmed)
+  PENDING    // Uploaded and awaiting admin decision (OCR runs in background)
+  APPROVED   // Cashback eligible
+  REJECTED   // Rejected — reseller notified
 }
 
 enum InvoiceCurrency {
@@ -214,7 +208,7 @@ model Invoice {
   fileSizeBytes Int?
 
   // Status machine
-  status        InvoiceStatus   @default(PENDING_UPLOAD)
+  status        InvoiceStatus   @default(PENDING)
 
   // OCR-extracted fields (nullable until OCR completes)
   invoiceNumber     String?

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { invoiceApi, type Invoice } from '@/lib/api';
@@ -8,27 +8,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING_UPLOAD: 'Pending',
-  UPLOADED: 'Pending',
-  OCR_PROCESSING: 'Pending',
-  OCR_DONE: 'Pending',
-  NEEDS_REVIEW: 'Reviewing',
-  FRAUD_REVIEW: 'Reviewing',
+  PENDING: 'Pending',
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
-  BLACKLISTED: 'Rejected',
 };
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  PENDING_UPLOAD: 'outline',
-  UPLOADED: 'secondary',
-  OCR_PROCESSING: 'secondary',
-  OCR_DONE: 'secondary',
-  NEEDS_REVIEW: 'outline',
-  FRAUD_REVIEW: 'outline',
+  PENDING: 'outline',
   APPROVED: 'default',
   REJECTED: 'destructive',
-  BLACKLISTED: 'destructive',
 };
 
 export default function DashboardPage() {
@@ -38,9 +26,6 @@ export default function DashboardPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const IN_PROGRESS_STATUSES = ['PENDING_UPLOAD', 'UPLOADED', 'OCR_PROCESSING'];
 
   const loadInvoices = useCallback(async () => {
     if (!accessToken) return;
@@ -49,7 +34,6 @@ export default function DashboardPage() {
       const res = await invoiceApi.list(accessToken);
       setInvoices(res.items);
       setTotal(res.total);
-      return res.items;
     } catch {
       // non-fatal — table stays empty
     } finally {
@@ -66,24 +50,6 @@ export default function DashboardPage() {
     if (user && accessToken) loadInvoices();
   }, [user, accessToken, loadInvoices]);
 
-  // Auto-poll while any invoice is still being processed
-  useEffect(() => {
-    const hasInProgress = invoices.some((i) =>
-      IN_PROGRESS_STATUSES.includes(i.status),
-    );
-    if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    if (hasInProgress && accessToken) {
-      pollTimerRef.current = setTimeout(() => loadInvoices(), 4000);
-    }
-    return () => {
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoices, accessToken]);
-
   if (isLoading || !user) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -93,9 +59,7 @@ export default function DashboardPage() {
   }
 
   const approved = invoices.filter((i) => i.status === 'APPROVED').length;
-  const pending = invoices.filter((i) =>
-    ['PENDING_UPLOAD', 'UPLOADED', 'OCR_PROCESSING', 'OCR_DONE', 'FRAUD_REVIEW'].includes(i.status),
-  ).length;
+  const pending = invoices.filter((i) => i.status === 'PENDING').length;
   const totalCashback = invoices
     .filter((i) => i.status === 'APPROVED')
     .reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);

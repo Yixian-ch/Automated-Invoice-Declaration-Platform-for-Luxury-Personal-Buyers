@@ -7,8 +7,6 @@ import { toast } from 'sonner';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-const REVIEW_STATUSES = ['OCR_DONE', 'FRAUD_REVIEW', 'UPLOADED'];
-
 export default function AdminReviewPage() {
   const { accessToken } = useAuth();
   const [invoices, setInvoices] = useState<AdminInvoice[]>([]);
@@ -21,11 +19,8 @@ export default function AdminReviewPage() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      // Fetch each reviewable status and merge
-      const results = await Promise.all(
-        REVIEW_STATUSES.map((s) => adminApi.listInvoices(accessToken, { status: s, page: 1 })),
-      );
-      const all = results.flatMap((r) => r.items);
+      const result = await adminApi.listInvoices(accessToken, { status: 'PENDING', page: 1 });
+      const all = result.items;
       setInvoices(all);
       if (selected) {
         const refreshed = all.find((i) => i.id === selected.id);
@@ -94,11 +89,18 @@ export default function AdminReviewPage() {
                   selected?.id === inv.id ? 'bg-amber-50 border-l-2 border-l-[#B8966E]' : ''
                 }`}
               >
-                <p className="text-sm font-medium text-stone-700 truncate">
-                  {inv.originalFilename ?? inv.id.slice(0, 8)}
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-stone-700 truncate">
+                    {inv.originalFilename ?? inv.id.slice(0, 8)}
+                  </p>
+                  {inv.needsReview && (
+                    <span className="shrink-0 text-[10px] font-semibold text-white bg-red-500 rounded px-1 py-0.5 leading-none">
+                      需人工介入
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-stone-400 mt-0.5">
-                  {inv.user.firstName} {inv.user.lastName} · {inv.status}
+                  {inv.user.firstName} {inv.user.lastName}
                 </p>
                 <p className="text-xs text-stone-500 mt-0.5">
                   {inv.grandTotalAmount ? `€${Number(inv.grandTotalAmount).toFixed(2)}` : '—'}

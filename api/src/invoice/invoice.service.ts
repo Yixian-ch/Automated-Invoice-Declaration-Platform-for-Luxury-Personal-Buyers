@@ -35,7 +35,7 @@ export class InvoiceService {
   }
 
   /**
-   * Step 1 — Create a PENDING_UPLOAD invoice record and return a presigned PUT URL.
+   * Step 1 — Create a PENDING invoice record and return a presigned PUT URL.
    * The frontend uploads directly to S3 and then calls confirmUpload().
    */
   async initiateUpload(userId: string, dto: InitiateUploadDto) {
@@ -62,7 +62,7 @@ export class InvoiceService {
         originalFilename: dto.originalFilename,
         mimeType: dto.mimeType,
         fileSizeBytes: dto.fileSizeBytes ? parseInt(dto.fileSizeBytes, 10) : null,
-        status: 'PENDING_UPLOAD',
+        status: 'PENDING',
       },
     });
 
@@ -74,27 +74,22 @@ export class InvoiceService {
   }
 
   /**
-   * Step 2 — Client confirms the S3 upload is complete.
-   * Transitions to UPLOADED and enqueues an OCR job.
+   * Step 2 — Client confirms the S3 upload is complete; queues background OCR.
+   * Status stays PENDING throughout — OCR only fills in field data.
    */
   async confirmUpload(userId: string, invoiceId: string) {
     const invoice = await this.findOwnInvoice(userId, invoiceId);
 
-    if (invoice.status !== 'PENDING_UPLOAD') {
-      throw new BadRequestException(
-        `Invoice is already in status ${invoice.status}`,
-      );
+    if (invoice.uploadedAt) {
+      throw new BadRequestException('Invoice already confirmed');
     }
 
     const updated = await this.prisma.invoice.update({
       where: { id: invoiceId },
-      data: {
-        status: 'UPLOADED',
-        uploadedAt: new Date(),
-      },
+      data: { uploadedAt: new Date() },
     });
 
-    // Enqueue OCR job
+    // Enqueue OCR job — runs in background, does not change invoice status
     await this.ocrQueue.add(
       'process-invoice',
       { invoiceId },
