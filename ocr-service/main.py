@@ -90,14 +90,16 @@ def _image_to_array(data: bytes) -> list[np.ndarray]:
 
 def _run_ocr(
     arrays: list[np.ndarray],
-) -> tuple[list[str], float, list[tuple[float, float, float, str, float]]]:
+) -> tuple[list[str], float, list[tuple[float, float, float, str, float]], float]:
     """Run PaddleOCR; group word boxes into logical lines by Y proximity.
 
-    Returns (lines, avg_confidence, raw_boxes) where raw_boxes is a flat list
-    of (y_mid, x_min, x_max, text, conf) sorted by (y_mid, x_min), preserving
-    individual word-level coordinates for column-aware extraction.
+    Returns (lines, avg_confidence, raw_boxes, page_width) where raw_boxes is a
+    flat list of (y_mid, x_min, x_max, text, conf) sorted by (y_mid, x_min),
+    preserving individual word-level coordinates for column-aware extraction.
+    page_width is the pixel width of the first page image.
     """
     all_boxes: list[tuple[float, float, float, str, float]] = []
+    page_width: float = float(arrays[0].shape[1]) if arrays else 1000.0
 
     for arr in arrays:
         result = ocr_engine.ocr(arr, cls=True)
@@ -119,7 +121,7 @@ def _run_ocr(
                 all_boxes.append((y_mid, x_min, x_max, text, float(conf)))
 
     if not all_boxes:
-        return [], 0.0, []
+        return [], 0.0, [], page_width
 
     all_boxes.sort(key=lambda b: (b[0], b[1]))
 
@@ -145,7 +147,7 @@ def _run_ocr(
         confidences.extend(b[4] for b in current_row)
 
     avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
-    return lines, avg_conf, all_boxes
+    return lines, avg_conf, all_boxes, page_width
 
 
 # ─── Amount parsing ───────────────────────────────────────────────────────────
@@ -246,6 +248,7 @@ def _find_hdr_box(
 def _extract_bve(
     lines: list[str],
     boxes: list[tuple[float, float, float, str, float]],
+    page_width: float = 1000.0,
 ) -> OcrResult:
     """BVE-specialised extractor: section-aware, column-filtered, per-field confidence."""
     full_text = "\n".join(lines)
@@ -374,42 +377,150 @@ def _extract_bve(
                     buyer_name = ExtractedField(value=parts or None, confidence=0.82)
                 break
 
-    # ── line_items ─────────────────────────────────────────────────────────
+    # ── line_items (column-aware using raw box X coordinates) ─────────────
+    # MARCHANDISES table columns (left→right):
+    #   N° | Description | Numéro d'identification | Quantité | Taux TVA | Montant TVA | Montant TTC
+    # X boundaries as fractions of page_width (empirically measured on BVE PDFs):
+    #   Description  : 0%–55%
+    #   Quantité     : 55%–68%  (small integer, e.g. "1", "2")
+    #   Taux TVA     : 62%–72%  (contains "20,00%" — skip for extraction)
+    #   Montant TVA  : 70%–82%
+    #   Montant TTC  : 78%–100% (rightmost — this is what we want for amount_ttc)
     line_items: list[LineItem] = []
-    in_table = False
-    for i, line in enumerate(lines):
-        if _BVE_ITEMS_HDR_RE.search(line):
-            in_table = True
-            continue
-        if not in_table:
-            continue
-        # Stop when we hit another section header or total line
-        if re.search(r"(ACHETEUR|COMMER[CÇ]ANT|TOTAL\s+TTC|montant\s+total)", line, re.IGNORECASE):
-            break
-        # A merchandise line typically has a description plus an amount
-        amt = _parse_amount(line)
-        # Skip header-like rows ("Désignation", "Quantité", "Montant")
-        if re.search(r"(d[eé]signation|quantit[eé]|montant|amount|description)", line, re.IGNORECASE):
-            continue
-        # Need at least one alphabetic word and a number
-        if not re.search(r"[A-Za-zÀ-ÿ]{3,}", line):
-            continue
-        # Extract quantity (1, 2, 3, …) — typically a standalone integer in the line
-        qty_m = re.search(r"\b([1-9]\d?)\b", line)
-        qty: Optional[float] = float(qty_m.group(1)) if qty_m else None
-        # Description: everything before the first number or the full line minus trailing digits/amounts
-        desc_raw = re.split(r"\s+\d[\d\s]*[,.]", line)[0].strip()
-        if not desc_raw:
-            desc_raw = re.sub(r"[\d\s,.:]+$", "", line).strip()
-        if len(desc_raw) < 3:
-            continue
-        conf = 0.85 if amt is not None else 0.55
-        line_items.append(LineItem(
-            description=desc_raw,
-            quantity=qty,
-            amount_ttc=amt,
-            confidence=conf,
-        ))
+
+    _SECTION_END_RE = re.compile(
+        r"(ACHETEUR|COMMER[CÇ]ANT|TOTAL\s+TTC|montant\s+total)",
+        re.IGNORECASE,
+    )
+    _HDR_ROW_RE = re.compile(
+        r"(d[eé]signation|quantit[eé]|montant|taux|description|n[°o]\b|num[eé]ro|identification)",
+        re.IGNORECASE,
+    )
+
+    items_hdr = _find_hdr_box(boxes, _BVE_ITEMS_HDR_RE)
+    if items_hdr is not None:
+        section_start_y = items_hdr[0]
+
+        section_end_y = float("inf")
+        for b in boxes:
+            if b[0] > section_start_y and _SECTION_END_RE.search(b[3]):
+                section_end_y = b[0]
+                break
+
+        section_boxes = [
+            b for b in boxes
+            if section_start_y < b[0] < section_end_y
+        ]
+
+        # Column X cut-offs
+        desc_x_max = page_width * 0.55
+        qty_x_min  = page_width * 0.50
+        qty_x_max  = page_width * 0.70
+        ttc_x_min  = page_width * 0.78
+
+        # Group section boxes into rows by Y proximity (15 px tolerance)
+        rows: list[list[tuple]] = []
+        cur_row: list[tuple] = []
+        cur_y: float = section_boxes[0][0] if section_boxes else 0.0
+        for b in section_boxes:
+            if abs(b[0] - cur_y) < 15:
+                cur_row.append(b)
+            else:
+                if cur_row:
+                    rows.append(sorted(cur_row, key=lambda x: x[1]))
+                cur_row = [b]
+                cur_y = b[0]
+        if cur_row:
+            rows.append(sorted(cur_row, key=lambda x: x[1]))
+
+        for row in rows:
+            row_text = " ".join(b[3] for b in row)
+            if _HDR_ROW_RE.search(row_text):
+                continue
+
+            # Description: leftmost boxes that contain letters
+            desc_boxes = [
+                b for b in row
+                if b[2] <= desc_x_max and re.search(r"[A-Za-zÀ-ÿ]{2,}", b[3])
+            ]
+            if not desc_boxes:
+                continue
+            description = " ".join(b[3] for b in sorted(desc_boxes, key=lambda x: x[1]))
+            if len(description) < 3:
+                continue
+
+            # Quantity: boxes in Quantité column, explicitly excluding "%" values
+            qty: Optional[float] = None
+            qty_boxes = [
+                b for b in row
+                if b[1] >= qty_x_min and b[2] <= qty_x_max and "%" not in b[3]
+            ]
+            for qb in qty_boxes:
+                qm = re.fullmatch(r"(\d+(?:[,.]\d+)?)", qb[3].strip())
+                if qm:
+                    try:
+                        qty = float(qm.group(1).replace(",", "."))
+                        break
+                    except ValueError:
+                        pass
+
+            # Montant TTC: rightmost column (not Montant TVA)
+            amt_ttc: Optional[float] = None
+            ttc_boxes = sorted(
+                [b for b in row if b[1] >= ttc_x_min],
+                key=lambda x: x[1],
+            )
+            for tb in ttc_boxes:
+                amt = _parse_amount(tb[3])
+                if amt is not None:
+                    amt_ttc = amt
+                    break
+            # Fallback: rightmost box in the row that parses as an amount
+            if amt_ttc is None:
+                for rb in sorted(row, key=lambda x: -x[1]):
+                    amt = _parse_amount(rb[3])
+                    if amt is not None:
+                        amt_ttc = amt
+                        break
+
+            conf = 0.85 if amt_ttc is not None else 0.55
+            line_items.append(LineItem(
+                description=description,
+                quantity=qty,
+                amount_ttc=amt_ttc,
+                confidence=conf,
+            ))
+
+    else:
+        # Fallback: line-based extraction when no box data available for MARCHANDISES
+        in_table = False
+        for i, line in enumerate(lines):
+            if _BVE_ITEMS_HDR_RE.search(line):
+                in_table = True
+                continue
+            if not in_table:
+                continue
+            if re.search(r"(ACHETEUR|COMMER[CÇ]ANT|TOTAL\s+TTC|montant\s+total)", line, re.IGNORECASE):
+                break
+            amt = _parse_amount(line)
+            if re.search(r"(d[eé]signation|quantit[eé]|montant|amount|description)", line, re.IGNORECASE):
+                continue
+            if not re.search(r"[A-Za-zÀ-ÿ]{3,}", line):
+                continue
+            qty_m = re.search(r"\b([1-9]\d?)\b", line)
+            qty = float(qty_m.group(1)) if qty_m else None
+            desc_raw = re.split(r"\s+\d[\d\s]*[,.]", line)[0].strip()
+            if not desc_raw:
+                desc_raw = re.sub(r"[\d\s,.:]+$", "", line).strip()
+            if len(desc_raw) < 3:
+                continue
+            conf = 0.85 if amt is not None else 0.55
+            line_items.append(LineItem(
+                description=desc_raw,
+                quantity=qty,
+                amount_ttc=amt,
+                confidence=conf,
+            ))
 
     # ── arithmetic_check ───────────────────────────────────────────────────
     arithmetic_check: Optional[str] = None
@@ -555,11 +666,11 @@ def process(req: ProcessRequest):
         else:
             arrays = _image_to_array(data)
 
-        lines, _, boxes = _run_ocr(arrays)
+        lines, _, boxes, page_width = _run_ocr(arrays)
 
         if _is_bve(lines):
             logger.info("Detected BVE document — using BVE extractor")
-            result = _extract_bve(lines, boxes)
+            result = _extract_bve(lines, boxes, page_width)
         else:
             logger.info("Non-BVE document — using generic extractor")
             result = _extract_generic(lines)
