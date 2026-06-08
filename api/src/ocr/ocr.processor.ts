@@ -95,28 +95,31 @@ export class OcrProcessor {
         buffer,
         invoice.mimeType ?? 'application/pdf',
       );
+
+      // Core field confidence below threshold or arithmetic mismatch → human review
+      const nextStatus = result.needsReview ? 'NEEDS_REVIEW' : 'OCR_DONE';
+
       await this.prisma.invoice.update({
         where: { id: invoiceId },
         data: {
-          status: 'OCR_DONE',
-          invoiceNumber: result.invoiceNumber,
+          status: nextStatus,
           purchaseDate: result.purchaseDate,
-          vendorName: result.vendorName,
-          vendorAddress: result.vendorAddress,
+          vendorName: result.vendorName ?? result.merchantName,
           brandName: result.brandName,
-          itemDescription: result.itemDescription,
           currency: this.mapCurrency(result.currency) as any,
-          subtotalAmount: result.subtotalAmount,
-          taxAmount: result.taxAmount,
           grandTotalAmount: result.grandTotalAmount,
           ocrConfidence: result.confidence,
           ocrRawJson: result.rawJson as any,
           ocrCompletedAt: new Date(),
+          lineItems: result.lineItems.length > 0 ? (result.lineItems as any) : undefined,
+          arithmeticCheck: result.arithmeticCheck ?? undefined,
+          needsReview: result.needsReview,
+          reviewReasons: result.reviewReasons,
         },
       });
 
       this.logger.log(
-        `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}`,
+        `OCR complete for invoice ${invoiceId} — status=${nextStatus} confidence=${result.confidence.toFixed(2)}`,
       );
     } catch (err) {
       this.logger.error(`OCR failed for invoice ${invoiceId}`, err);
