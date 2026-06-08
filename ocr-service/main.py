@@ -392,8 +392,16 @@ def _extract_bve(
         r"(ACHETEUR|COMMER[CÇ]ANT|TOTAL\s+TTC|montant\s+total)",
         re.IGNORECASE,
     )
+    # Row-level: skip any row whose joined text contains a column-header keyword
     _HDR_ROW_RE = re.compile(
-        r"(d[eé]signation|quantit[eé]|montant|taux|description|n[°o]\b|num[eé]ro|identification)",
+        r"(d[eé]signation|quantit[eé]|montant|taux|description|n[°o]\b|num[eé]ro"
+        r"|identification|marchandises|tva\b)",
+        re.IGNORECASE,
+    )
+    # Description-level: skip rows whose extracted description is itself a header phrase
+    _DESC_HDR_RE = re.compile(
+        r"(num[eé]ro|d.identification|description\s+des|quantit[eé]"
+        r"|taux\s+tva|montant\s+tva|montant\s+ttc)",
         re.IGNORECASE,
     )
 
@@ -448,8 +456,11 @@ def _extract_bve(
             description = " ".join(b[3] for b in sorted(desc_boxes, key=lambda x: x[1]))
             if len(description) < 3:
                 continue
+            # Skip rows whose description is a column header phrase
+            if _DESC_HDR_RE.search(description):
+                continue
 
-            # Quantity: boxes in Quantité column, explicitly excluding "%" values
+            # Quantity: boxes in Quantité column, exclude "%" and values > 10
             qty: Optional[float] = None
             qty_boxes = [
                 b for b in row
@@ -459,16 +470,20 @@ def _extract_bve(
                 qm = re.fullmatch(r"(\d+(?:[,.]\d+)?)", qb[3].strip())
                 if qm:
                     try:
-                        qty = float(qm.group(1).replace(",", "."))
-                        break
+                        v = float(qm.group(1).replace(",", "."))
+                        if v <= 10:          # BVE quantities are always small integers
+                            qty = v
+                            break
                     except ValueError:
                         pass
+            if qty is None:
+                qty = 1.0                    # safe default when column is ambiguous
 
-            # Montant TTC: rightmost column (not Montant TVA)
+            # Montant TTC: take the rightmost box in the rightmost column zone
             amt_ttc: Optional[float] = None
             ttc_boxes = sorted(
                 [b for b in row if b[1] >= ttc_x_min],
-                key=lambda x: x[1],
+                key=lambda x: -x[1],        # descending x_min → rightmost first
             )
             for tb in ttc_boxes:
                 amt = _parse_amount(tb[3])
