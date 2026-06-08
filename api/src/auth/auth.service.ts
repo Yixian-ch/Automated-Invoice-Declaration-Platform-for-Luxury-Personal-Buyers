@@ -13,7 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { UserRole, UserStatus, InviteCodeStatus, AccountType } from '@prisma/client';
+import { UserRole, UserStatus, KycStatus, KybStatus, InviteCodeStatus, AccountType } from '@prisma/client';
 import { MailService } from '../mail/mail.service';
 
 const BCRYPT_ROUNDS = 12;
@@ -43,7 +43,15 @@ export class AuthService {
     if (existing) throw new ConflictException('Email already registered');
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const emailVerificationToken = uuidv4();
+
+    const bypassEmailVerification = this.config.get<string>('BYPASS_EMAIL_VERIFICATION') === 'true';
+    const bypassKyc = this.config.get<string>('BYPASS_KYC') === 'true';
+    const emailVerificationToken = bypassEmailVerification ? null : uuidv4();
+
+    const bypassFields = {
+      ...(bypassEmailVerification && { emailVerifiedAt: new Date() }),
+      ...(bypassKyc && { kycStatus: KycStatus.APPROVED, kybStatus: KybStatus.APPROVED }),
+    };
 
     // ── Path B: invite-based registration ──────────────────────────────────────
     if (dto.inviteCode) {
@@ -78,6 +86,7 @@ export class AuthService {
             emailVerificationToken,
             organizationId: invite.intendedOrgId ?? undefined,
             registeredViaInvite: true,
+            ...bypassFields,
           },
         });
         await tx.inviteCode.update({
@@ -102,7 +111,9 @@ export class AuthService {
         return newUser;
       });
 
-      await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken);
+      if (!bypassEmailVerification) {
+        await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken!);
+      }
       return { message: 'Registration successful. Please verify your email.' };
     }
 
@@ -138,6 +149,7 @@ export class AuthService {
           status: UserStatus.REGISTERED,
           emailVerificationToken,
           organizationId: orgId,
+          ...bypassFields,
         },
       });
 
@@ -156,7 +168,9 @@ export class AuthService {
       return newUser;
     });
 
-    await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken);
+    if (!bypassEmailVerification) {
+      await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken!);
+    }
     return { message: 'Registration successful. Please verify your email.' };
   }
 

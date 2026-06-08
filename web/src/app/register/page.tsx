@@ -1,13 +1,17 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 type RegistrationPath = 'choose' | 'self' | 'invite';
 type Step = RegistrationPath | 'success';
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const { login } = useAuth();
   const [step, setStep] = useState<Step>('choose');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -79,6 +83,14 @@ export default function RegisterPage() {
             };
 
       await authApi.register(payload);
+      // Try auto-login so the user lands on dashboard without email verification
+      try {
+        await login(form.email, form.password);
+        router.push('/dashboard');
+        return;
+      } catch {
+        // Bypass not active — fall through to success screen
+      }
       setStep('success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
