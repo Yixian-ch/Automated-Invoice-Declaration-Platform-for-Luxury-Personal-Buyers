@@ -13,6 +13,7 @@ const STATUS_LABEL: Record<InvoiceStatus, string> = {
   UPLOADED: 'Pending',
   OCR_PROCESSING: 'Pending',
   OCR_DONE: 'Pending',
+  NEEDS_REVIEW: 'Reviewing',
   FRAUD_REVIEW: 'Reviewing',
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
@@ -24,17 +25,14 @@ const STATUS_VARIANT: Record<InvoiceStatus, 'default' | 'secondary' | 'destructi
   UPLOADED: 'secondary',
   OCR_PROCESSING: 'secondary',
   OCR_DONE: 'secondary',
+  NEEDS_REVIEW: 'outline',
   FRAUD_REVIEW: 'outline',
   APPROVED: 'default',
   REJECTED: 'destructive',
   BLACKLISTED: 'destructive',
 };
 
-const PROCESSING_STATUSES: InvoiceStatus[] = [
-  'PENDING_UPLOAD',
-  'UPLOADED',
-  'OCR_PROCESSING',
-];
+const PROCESSING_STATUSES: InvoiceStatus[] = ['PENDING_UPLOAD', 'UPLOADED', 'OCR_PROCESSING'];
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (

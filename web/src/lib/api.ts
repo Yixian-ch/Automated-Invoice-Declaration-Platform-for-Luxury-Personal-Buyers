@@ -132,6 +132,7 @@ export type InvoiceStatus =
   | 'UPLOADED'
   | 'OCR_PROCESSING'
   | 'OCR_DONE'
+  | 'NEEDS_REVIEW'
   | 'FRAUD_REVIEW'
   | 'APPROVED'
   | 'REJECTED'
@@ -225,6 +226,14 @@ export type MerchantBill = {
   importedAt: string;
 };
 
+export type AdminUser = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  cashbackRate: string | null;
+};
+
 export const adminApi = {
   listInvoices: (token: string, params?: { status?: string; userId?: string; page?: number }) => {
     const qs = new URLSearchParams();
@@ -259,4 +268,13 @@ export const adminApi = {
 
   listMerchantBills: (token: string) =>
     request<MerchantBill[]>('/admin/merchant-bills', { token }),
+
+  listUsers: (token: string) => request<AdminUser[]>('/admin/users', { token }),
+
+  updateCashbackRate: (token: string, userId: string, cashbackRate: number) =>
+    request<AdminUser>(`/admin/users/${userId}/cashback-rate`, {
+      method: 'PATCH',
+      body: { cashbackRate },
+      token,
+    }),
 };

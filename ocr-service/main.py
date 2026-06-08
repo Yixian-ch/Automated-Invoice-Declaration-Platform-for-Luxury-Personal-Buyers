@@ -1,6 +1,9 @@
 """
 LIDP OCR Microservice — PaddleOCR-based invoice parser.
 
+Specialised for French Bordereau de Vente à l'Exportation (BVE) documents,
+with fallback heuristics for general luxury-retail invoices.
+
 POST /process
   Body: { "content": "<base64>", "mime_type": "application/pdf" | "image/jpeg" | ... }
   Returns: OcrResult JSON
@@ -18,7 +21,7 @@ import re
 import tempfile
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -33,8 +36,6 @@ logger = logging.getLogger("ocr-service")
 
 app = FastAPI(title="LIDP OCR Service")
 
-# Initialise PaddleOCR once at startup — det+rec+cls for multilingual invoices
-# lang='en' covers Latin scripts; add 'ch' for Chinese if needed
 ocr_engine = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
 
 
@@ -45,25 +46,39 @@ class ProcessRequest(BaseModel):
     mime_type: str = "application/pdf"
 
 
+class ExtractedField(BaseModel):
+    """A single extracted field with its confidence score."""
+    value: Any = None
+    confidence: float = 0.0
+
+
+class LineItem(BaseModel):
+    description: str
+    quantity: Optional[float] = None
+    amount_ttc: Optional[float] = None
+    confidence: float = 0.0
+
+
 class OcrResult(BaseModel):
-    invoice_number: Optional[str] = None
-    purchase_date: Optional[str] = None   # ISO 8601 date string
-    vendor_name: Optional[str] = None
-    vendor_address: Optional[str] = None
-    brand_name: Optional[str] = None
-    item_description: Optional[str] = None
-    currency: Optional[str] = None
-    subtotal_amount: Optional[float] = None
-    tax_amount: Optional[float] = None
-    grand_total_amount: Optional[float] = None
+    # Core fields (vetoed below 0.6)
+    merchant_name: ExtractedField = ExtractedField()
+    purchase_date: ExtractedField = ExtractedField()
+    grand_total_amount: ExtractedField = ExtractedField()
+    # Non-core fields
+    buyer_name: ExtractedField = ExtractedField()
+    line_items: list[LineItem] = []
+    # Validation
+    arithmetic_check: Optional[str] = None   # "pass" | "fail" | None
+    needs_review: bool = False
+    review_reasons: list[str] = []
+    # Overall
     confidence: float = 0.0
     raw_text: str = ""
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ─── Image helpers ────────────────────────────────────────────────────────────
 
 def _pdf_to_images(data: bytes) -> list[np.ndarray]:
-    """Convert each PDF page to a numpy array for PaddleOCR."""
     pil_images = convert_from_bytes(data, dpi=200)
     return [np.array(img) for img in pil_images]
 
@@ -74,12 +89,8 @@ def _image_to_array(data: bytes) -> list[np.ndarray]:
 
 
 def _run_ocr(arrays: list[np.ndarray]) -> tuple[list[str], float]:
-    """Run PaddleOCR on each page image.
-
-    Groups word-level boxes into logical lines by Y-coordinate so that
-    label+value pairs on the same row are kept together (e.g. "Total  1500.00").
-    """
-    all_boxes: list[tuple[float, float, str, float]] = []  # (y_mid, x_min, text, conf)
+    """Run PaddleOCR; group word boxes into logical lines by Y proximity."""
+    all_boxes: list[tuple[float, float, str, float]] = []
 
     for arr in arrays:
         result = ocr_engine.ocr(arr, cls=True)
@@ -93,7 +104,6 @@ def _run_ocr(arrays: list[np.ndarray]) -> tuple[list[str], float]:
                 text = text.strip()
                 if not text:
                     continue
-                # box is [[x0,y0],[x1,y1],[x2,y2],[x3,y3]]
                 ys = [pt[1] for pt in box]
                 xs = [pt[0] for pt in box]
                 y_mid = (min(ys) + max(ys)) / 2
@@ -103,10 +113,8 @@ def _run_ocr(arrays: list[np.ndarray]) -> tuple[list[str], float]:
     if not all_boxes:
         return [], 0.0
 
-    # Sort by vertical position then horizontal
     all_boxes.sort(key=lambda b: (b[0], b[1]))
 
-    # Group into lines: boxes within ~10px of each other vertically are the same row
     lines: list[str] = []
     confidences: list[float] = []
     current_row: list[tuple[float, float, str, float]] = []
@@ -132,182 +140,326 @@ def _run_ocr(arrays: list[np.ndarray]) -> tuple[list[str], float]:
     return lines, avg_conf
 
 
-# ─── Field extraction heuristics ─────────────────────────────────────────────
+# ─── Amount parsing ───────────────────────────────────────────────────────────
 
-_CURRENCY_MAP = {
-    "€": "EUR", "eur": "EUR",
-    "$": "USD", "usd": "USD",
-    "£": "GBP", "gbp": "GBP",
-    "¥": "CNY", "cny": "CNY", "rmb": "CNY",
-    "¥": "JPY", "jpy": "JPY",
-    "chf": "CHF",
-}
-
-_INVOICE_NO_RE = re.compile(
-    r"(?:invoice|inv|facture|bill|receipt|reçu|no\.?|n°|ref\.?)[\s:#\-]*([A-Z0-9\-/]{3,20})",
-    re.IGNORECASE,
-)
-_DATE_RE = re.compile(
-    r"\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b"
-)
-_AMOUNT_RE = re.compile(r"[\d\s]{1,6}[.,]\d{2}")
-_TOTAL_LABEL_RE = re.compile(
-    r"(grand\s*total|total\s*(?:ttc|ht|amount|due|general)|montant\s*total|total)",
-    re.IGNORECASE,
-)
-_TAX_LABEL_RE = re.compile(
-    r"(tva|vat|tax|taxe|impôt)",
-    re.IGNORECASE,
-)
-_SUBTOTAL_LABEL_RE = re.compile(
-    r"(subtotal|sous.?total|ht|hors\s*taxe|net\s*amount)",
-    re.IGNORECASE,
-)
+# Matches French-style amounts: "1 380,00" "10 603,00" or dot-decimal "1380.00"
+_AMOUNT_FR_RE = re.compile(r"\b([\d][\d\s]{0,9}[,]\d{2})\b")
+_AMOUNT_EN_RE = re.compile(r"\b([\d][\d\s]{0,9}[.]\d{2})\b")
 
 
 def _parse_amount(text: str) -> Optional[float]:
-    """Extract the first decimal amount from a string."""
-    m = _AMOUNT_RE.search(text)
-    if not m:
-        return None
-    raw = m.group(0).replace(" ", "").replace(",", ".")
-    try:
-        return float(raw)
-    except ValueError:
-        return None
-
-
-def _detect_currency(lines: list[str]) -> Optional[str]:
-    full = " ".join(lines).lower()
-    for symbol, code in _CURRENCY_MAP.items():
-        if symbol in full:
-            return code
-    # check ISO codes
-    for code in ["EUR", "USD", "GBP", "CNY", "JPY", "CHF"]:
-        if code in full.upper():
-            return code
-    # Infer from known European luxury retailers (FR/EU sites → EUR)
-    if any("lafayette" in l.lower() or ".fr" in l.lower() for l in lines):
-        return "EUR"
+    """Parse a decimal amount from French (1 380,00) or English (1380.00) notation."""
+    m = _AMOUNT_FR_RE.search(text)
+    if m:
+        raw = m.group(1).replace(" ", "").replace(",", ".")
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    m2 = _AMOUNT_EN_RE.search(text)
+    if m2:
+        raw = m2.group(1).replace(" ", "")
+        try:
+            return float(raw)
+        except ValueError:
+            pass
     return None
 
 
-def _detect_vendor(lines: list[str]) -> Optional[str]:
-    """Heuristic: vendor is usually in the first 5 non-empty lines,
-    or can be inferred from a website URL found anywhere in the text."""
-    # Try URL-based detection first (reliable)
+# ─── BVE-specific extraction ──────────────────────────────────────────────────
+
+# Section headers on a BVE
+_BVE_MARKER_RE = re.compile(
+    r"bordereau\s+de\s+vente|BVE|détaxe|vente\s+à\s+l.export",
+    re.IGNORECASE,
+)
+_BVE_MERCHANT_HDR_RE = re.compile(r"COMMER[CÇ]ANT", re.IGNORECASE)
+_BVE_BUYER_HDR_RE = re.compile(r"ACHETEUR", re.IGNORECASE)
+_BVE_ITEMS_HDR_RE = re.compile(r"MARCHANDISES", re.IGNORECASE)
+_BVE_DATE_RE = re.compile(
+    r"date\s+d[\'’][\xc9e]?mission\s+(?:du\s+)?BVE\s*[:\-]?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})",
+    re.IGNORECASE,
+)
+_BVE_TOTAL_RE = re.compile(
+    r"montant\s+total\s+TTC\s*[:\-]?\s*([\d\s]+[,.]\d{2})",
+    re.IGNORECASE,
+)
+
+# Fallback generic patterns
+_DATE_RE = re.compile(
+    r"\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b"
+)
+_TOTAL_LABEL_RE = re.compile(
+    r"(grand\s*total|total\s*(?:ttc|ht|amount|due|general)|montant\s*total|total\s+g[eé]n[eé]ral|total)",
+    re.IGNORECASE,
+)
+_INVOICE_NO_RE = re.compile(
+    r"(?:invoice|inv|facture|bill|receipt|re[çc]u|no\.?|n°|ref\.?)[\s:#\-]*([A-Z0-9\-/]{3,20})",
+    re.IGNORECASE,
+)
+
+
+def _is_bve(lines: list[str]) -> bool:
+    full = "\n".join(lines[:30])
+    return bool(_BVE_MARKER_RE.search(full))
+
+
+def _extract_bve(lines: list[str]) -> OcrResult:
+    """BVE-specialised extractor: section-aware, per-field confidence."""
+    full_text = "\n".join(lines)
+    review_reasons: list[str] = []
+
+    # ── merchant_name ──────────────────────────────────────────────────────
+    merchant_name = ExtractedField()
+    for i, line in enumerate(lines):
+        if _BVE_MERCHANT_HDR_RE.search(line):
+            # The merchant name is in the next 1-3 non-empty lines
+            for j in range(i + 1, min(i + 4, len(lines))):
+                candidate = lines[j].strip()
+                # Skip short words, numbers, or address-like content
+                if len(candidate) >= 3 and not re.match(r"^\d+", candidate):
+                    # ALL-CAPS name is typical for BVE merchants
+                    conf = 0.93 if candidate.isupper() else 0.78
+                    merchant_name = ExtractedField(value=candidate, confidence=conf)
+                    break
+            break
+    if merchant_name.value is None:
+        # Try URL-based fallback (lower confidence)
+        for line in lines:
+            lower = line.lower()
+            for known, name in [
+                ("samaritaine", "LA SAMARITAINE"),
+                ("galerieslafayette", "GALERIES LAFAYETTE"),
+                ("lafayette", "GALERIES LAFAYETTE"),
+                ("louisvuitton", "LOUIS VUITTON"),
+                ("louis-vuitton", "LOUIS VUITTON"),
+                ("dior.com", "CHRISTIAN DIOR"),
+                ("chanel.com", "CHANEL"),
+                ("hermes.com", "HERMÈS"),
+                ("hermès.com", "HERMÈS"),
+                ("gucci.com", "GUCCI"),
+                ("printemps", "PRINTEMPS"),
+            ]:
+                if known in lower:
+                    merchant_name = ExtractedField(value=name, confidence=0.72)
+                    break
+            if merchant_name.value:
+                break
+
+    # ── purchase_date ──────────────────────────────────────────────────────
+    purchase_date = ExtractedField()
+    m = _BVE_DATE_RE.search(full_text)
+    if m:
+        purchase_date = ExtractedField(value=m.group(1), confidence=0.93)
+    else:
+        # Generic date after "date" keywords
+        for line in lines:
+            if re.search(r"\bdate\b", line, re.IGNORECASE):
+                dm = _DATE_RE.search(line)
+                if dm:
+                    purchase_date = ExtractedField(value=dm.group(1), confidence=0.65)
+                    break
+        if purchase_date.value is None:
+            dm = _DATE_RE.search(full_text)
+            if dm:
+                purchase_date = ExtractedField(value=dm.group(1), confidence=0.50)
+
+    # ── grand_total_amount ─────────────────────────────────────────────────
+    grand_total = ExtractedField()
+    m = _BVE_TOTAL_RE.search(full_text)
+    if m:
+        amt = _parse_amount(m.group(1))
+        if amt is not None:
+            grand_total = ExtractedField(value=amt, confidence=0.97)
+    if grand_total.value is None:
+        for i, line in enumerate(lines):
+            if _TOTAL_LABEL_RE.search(line):
+                combined = line + (" " + lines[i + 1] if i + 1 < len(lines) else "")
+                amt = _parse_amount(combined)
+                if amt is not None:
+                    grand_total = ExtractedField(value=amt, confidence=0.70)
+                    break
+
+    # ── buyer_name ─────────────────────────────────────────────────────────
+    buyer_name = ExtractedField()
+    for i, line in enumerate(lines):
+        if _BVE_BUYER_HDR_RE.search(line):
+            nom: Optional[str] = None
+            prenom: Optional[str] = None
+            for j in range(i + 1, min(i + 8, len(lines))):
+                chunk = lines[j].strip()
+                nm = re.search(r"[Nn]om\s*[:\-]?\s*(.+)", chunk)
+                pm = re.search(r"[Pp]r[ée]nom\s*[:\-]?\s*(.+)", chunk)
+                if nm:
+                    nom = nm.group(1).strip()
+                if pm:
+                    prenom = pm.group(1).strip()
+                # Sometimes one line: "NOM Prénom NOM_VALUE"
+                if not nm and not pm and re.match(r"^[A-Z]{2,}", chunk):
+                    nom = chunk
+            if nom or prenom:
+                parts = " ".join(p for p in [prenom, nom] if p)
+                buyer_name = ExtractedField(value=parts or None, confidence=0.82)
+            break
+
+    # ── line_items ─────────────────────────────────────────────────────────
+    line_items: list[LineItem] = []
+    in_table = False
+    for i, line in enumerate(lines):
+        if _BVE_ITEMS_HDR_RE.search(line):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        # Stop when we hit another section header or total line
+        if re.search(r"(ACHETEUR|COMMER[CÇ]ANT|TOTAL\s+TTC|montant\s+total)", line, re.IGNORECASE):
+            break
+        # A merchandise line typically has a description plus an amount
+        amt = _parse_amount(line)
+        # Skip header-like rows ("Désignation", "Quantité", "Montant")
+        if re.search(r"(d[eé]signation|quantit[eé]|montant|amount|description)", line, re.IGNORECASE):
+            continue
+        # Need at least one alphabetic word and a number
+        if not re.search(r"[A-Za-zÀ-ÿ]{3,}", line):
+            continue
+        # Extract quantity (1, 2, 3, …) — typically a standalone integer in the line
+        qty_m = re.search(r"\b([1-9]\d?)\b", line)
+        qty: Optional[float] = float(qty_m.group(1)) if qty_m else None
+        # Description: everything before the first number or the full line minus trailing digits/amounts
+        desc_raw = re.split(r"\s+\d[\d\s]*[,.]", line)[0].strip()
+        if not desc_raw:
+            desc_raw = re.sub(r"[\d\s,.:]+$", "", line).strip()
+        if len(desc_raw) < 3:
+            continue
+        conf = 0.85 if amt is not None else 0.55
+        line_items.append(LineItem(
+            description=desc_raw,
+            quantity=qty,
+            amount_ttc=amt,
+            confidence=conf,
+        ))
+
+    # ── arithmetic_check ───────────────────────────────────────────────────
+    arithmetic_check: Optional[str] = None
+    if line_items and grand_total.value is not None:
+        items_with_amount = [li for li in line_items if li.amount_ttc is not None]
+        if items_with_amount:
+            items_sum = sum(li.amount_ttc for li in items_with_amount)
+            diff = abs(items_sum - grand_total.value)
+            arithmetic_check = "pass" if diff < 0.01 else "fail"
+
+    # ── needs_review ──────────────────────────────────────────────────────
+    CORE_THRESHOLD = 0.6
+    if merchant_name.confidence < CORE_THRESHOLD:
+        review_reasons.append(f"merchant_name confidence too low ({merchant_name.confidence:.2f})")
+    if purchase_date.confidence < CORE_THRESHOLD:
+        review_reasons.append(f"purchase_date confidence too low ({purchase_date.confidence:.2f})")
+    if grand_total.confidence < CORE_THRESHOLD:
+        review_reasons.append(f"grand_total_amount confidence too low ({grand_total.confidence:.2f})")
+    if arithmetic_check == "fail":
+        review_reasons.append("arithmetic check failed: line items sum ≠ grand total")
+
+    needs_review = len(review_reasons) > 0
+
+    # ── overall confidence ─────────────────────────────────────────────────
+    core_confs = [merchant_name.confidence, purchase_date.confidence, grand_total.confidence]
+    overall = round(sum(core_confs) / len(core_confs), 4)
+
+    return OcrResult(
+        merchant_name=merchant_name,
+        purchase_date=purchase_date,
+        grand_total_amount=grand_total,
+        buyer_name=buyer_name,
+        line_items=line_items,
+        arithmetic_check=arithmetic_check,
+        needs_review=needs_review,
+        review_reasons=review_reasons,
+        confidence=overall,
+        raw_text="\n".join(lines),
+    )
+
+
+def _extract_generic(lines: list[str]) -> OcrResult:
+    """Fallback extractor for non-BVE invoices (best-effort heuristics)."""
+    full_text = "\n".join(lines)
+    review_reasons: list[str] = []
+
+    # merchant_name — first meaningful line, or URL-based
+    merchant_val: Optional[str] = None
+    merchant_conf = 0.50
     for line in lines:
         lower = line.lower()
-        if "galerieslafayette" in lower:
-            return "Galeries Lafayette"
-        if "louisvuitton" in lower or "louis-vuitton" in lower:
-            return "Louis Vuitton"
-        if "dior.com" in lower:
-            return "Dior"
-        if "chanel.com" in lower:
-            return "Chanel"
-        if "hermes.com" in lower or "hermès.com" in lower:
-            return "Hermès"
-        if "gucci.com" in lower:
-            return "Gucci"
-    # Fallback to first non-empty line
-    candidates = [l for l in lines[:8] if len(l) > 3]
-    return candidates[0] if candidates else None
+        for keyword, name in [
+            ("galerieslafayette", "Galeries Lafayette"),
+            ("lafayette", "Galeries Lafayette"),
+            ("louisvuitton", "Louis Vuitton"),
+            ("louis-vuitton", "Louis Vuitton"),
+            ("dior.com", "Dior"),
+            ("chanel.com", "Chanel"),
+            ("hermes.com", "Hermès"),
+            ("printemps", "Printemps"),
+        ]:
+            if keyword in lower:
+                merchant_val, merchant_conf = name, 0.80
+                break
+        if merchant_val:
+            break
+    if not merchant_val:
+        candidates = [l for l in lines[:8] if len(l) > 3]
+        if candidates:
+            merchant_val = candidates[0]
+            merchant_conf = 0.50
 
-
-def _detect_brand(lines: list[str]) -> Optional[str]:
-    luxury = [
-        "Louis Vuitton", "LV", "Chanel", "Hermès", "Hermes", "Gucci", "Prada",
-        "Christian Dior", "Dior", "Burberry", "Versace", "Givenchy", "Balenciaga", "Saint Laurent",
-        "YSL", "Bottega Veneta", "Fendi", "Valentino", "Celine", "Loewe",
-        "Moncler", "Off-White", "Rolex", "Cartier", "Tiffany", "Bulgari",
-        "Van Cleef", "Patek", "Audemars",
-    ]
-    full = " ".join(lines)
-    for brand in luxury:
-        if brand.lower() in full.lower():
-            return brand
-    return None
-
-
-def extract_fields(lines: list[str]) -> dict:
-    full_text = "\n".join(lines)
-
-    # Invoice number
-    invoice_number: Optional[str] = None
-    m = _INVOICE_NO_RE.search(full_text)
-    if m:
-        invoice_number = m.group(1).strip()
-
-    # Date — pick the first date found
-    purchase_date: Optional[str] = None
+    # purchase_date
+    date_val: Optional[str] = None
+    date_conf = 0.0
     dm = _DATE_RE.search(full_text)
     if dm:
-        purchase_date = dm.group(1)
+        date_val = dm.group(1)
+        date_conf = 0.60
 
-    # Amounts — scan lines for label then grab adjacent amount
-    grand_total: Optional[float] = None
-    tax_amount: Optional[float] = None
-    subtotal: Optional[float] = None
-
+    # grand_total_amount
+    total_val: Optional[float] = None
+    total_conf = 0.0
     for i, line in enumerate(lines):
-        combined = line + (" " + lines[i + 1] if i + 1 < len(lines) else "")
-        if _TOTAL_LABEL_RE.search(line) and grand_total is None:
-            grand_total = _parse_amount(combined)
-        if _TAX_LABEL_RE.search(line) and tax_amount is None:
-            tax_amount = _parse_amount(combined)
-        if _SUBTOTAL_LABEL_RE.search(line) and subtotal is None:
-            subtotal = _parse_amount(combined)
+        if _TOTAL_LABEL_RE.search(line):
+            combined = line + (" " + lines[i + 1] if i + 1 < len(lines) else "")
+            amt = _parse_amount(combined)
+            if amt is not None:
+                total_val, total_conf = amt, 0.70
+                break
+    if total_val is None:
+        all_amounts = sorted(
+            [a for a in (_parse_amount(l) for l in lines) if a is not None and a > 0],
+            reverse=True,
+        )
+        if all_amounts:
+            total_val, total_conf = all_amounts[0], 0.45
 
-    # Fallback: if no labeled total found, use the largest numeric amount in the text
-    if grand_total is None:
-        all_amounts = [_parse_amount(l) for l in lines]
-        valid = sorted([a for a in all_amounts if a is not None and a > 0], reverse=True)
-        if valid:
-            grand_total = valid[0]
-            # If tax was not found via label, use the amount near a TVA/20% line
-            if tax_amount is None and len(valid) >= 2:
-                for i, line in enumerate(lines):
-                    if re.search(r"\b(tva|t\.v\.a|vat|tax|taxe|20%|19%)\b", line, re.IGNORECASE):
-                        amt = _parse_amount(line)
-                        if amt is None and i + 1 < len(lines):
-                            amt = _parse_amount(lines[i + 1])
-                        if amt and amt < grand_total:
-                            tax_amount = amt
-                            break
+    CORE_THRESHOLD = 0.6
+    if merchant_conf < CORE_THRESHOLD:
+        review_reasons.append(f"merchant_name confidence too low ({merchant_conf:.2f})")
+    if date_conf < CORE_THRESHOLD:
+        review_reasons.append(f"purchase_date confidence too low ({date_conf:.2f})")
+    if total_conf < CORE_THRESHOLD:
+        review_reasons.append(f"grand_total_amount confidence too low ({total_conf:.2f})")
 
-    # Vendor & brand
-    vendor = _detect_vendor(lines)
-    brand = _detect_brand(lines)
+    needs_review = len(review_reasons) > 0
+    core_confs = [merchant_conf, date_conf, total_conf]
+    overall = round(sum(core_confs) / len(core_confs), 4)
 
-    # Item description — look for lines after "description", "item", "article"
-    item_desc: Optional[str] = None
-    for i, line in enumerate(lines):
-        if re.search(r"\b(description|item|article|produit|désignation)\b", line, re.IGNORECASE):
-            if i + 1 < len(lines):
-                item_desc = lines[i + 1]
-            break
-
-    # Address — look for lines with typical address patterns (digits + street keywords)
-    vendor_address: Optional[str] = None
-    addr_re = re.compile(r"\d+.*?(rue|avenue|ave|blvd|street|str|road|rd|place|pl)\b", re.IGNORECASE)
-    for line in lines:
-        if addr_re.search(line):
-            vendor_address = line
-            break
-
-    return {
-        "invoice_number": invoice_number,
-        "purchase_date": purchase_date,
-        "vendor_name": vendor,
-        "vendor_address": vendor_address,
-        "brand_name": brand,
-        "item_description": item_desc,
-        "currency": _detect_currency(lines),
-        "subtotal_amount": subtotal,
-        "tax_amount": tax_amount,
-        "grand_total_amount": grand_total,
-    }
+    return OcrResult(
+        merchant_name=ExtractedField(value=merchant_val, confidence=merchant_conf),
+        purchase_date=ExtractedField(value=date_val, confidence=date_conf),
+        grand_total_amount=ExtractedField(value=total_val, confidence=total_conf),
+        buyer_name=ExtractedField(),
+        line_items=[],
+        arithmetic_check=None,
+        needs_review=needs_review,
+        review_reasons=review_reasons,
+        confidence=overall,
+        raw_text="\n".join(lines),
+    )
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -331,14 +483,17 @@ def process(req: ProcessRequest):
         else:
             arrays = _image_to_array(data)
 
-        lines, confidence = _run_ocr(arrays)
-        fields = extract_fields(lines)
+        lines, _ = _run_ocr(arrays)
 
-        return OcrResult(
-            **fields,
-            confidence=round(confidence, 4),
-            raw_text="\n".join(lines),
-        )
+        if _is_bve(lines):
+            logger.info("Detected BVE document — using BVE extractor")
+            result = _extract_bve(lines)
+        else:
+            logger.info("Non-BVE document — using generic extractor")
+            result = _extract_generic(lines)
+
+        return result
+
     except Exception as exc:
         logger.exception("OCR processing failed")
         raise HTTPException(status_code=500, detail=str(exc))

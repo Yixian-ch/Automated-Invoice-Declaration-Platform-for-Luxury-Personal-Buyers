@@ -65,6 +65,7 @@ enum InvoiceStatus {
   UPLOADED          // S3 confirmed, OCR queued
   OCR_PROCESSING    // Google Document AI running
   OCR_DONE          // OCR complete, fraud check queued
+  NEEDS_REVIEW      // Core field confidence < 0.6 or arithmetic check failed
   FRAUD_REVIEW      // Flagged for human review
   APPROVED          // Cashback eligible
   REJECTED          // Rejected — reseller notified
@@ -233,6 +234,12 @@ model Invoice {
   // OCR confidence / quality
   ocrConfidence     Float?      // 0.0 – 1.0 overall confidence from Document AI
   ocrRawJson        Json?       // full Document AI response (retained for audit)
+
+  // BVE-specific validation fields
+  lineItems         Json?       // array of { description, quantity, amount_ttc, confidence }
+  arithmeticCheck   String?     // "pass" | "fail" — line items sum vs grand total
+  needsReview       Boolean     @default(false)
+  reviewReasons     String[]    // human-readable reasons for NEEDS_REVIEW status
 
   // Fraud scoring
   fraudFlags        Json?       // array of triggered rule names

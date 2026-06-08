@@ -4,37 +4,54 @@ import { ConfigService } from '@nestjs/config';
 export interface OcrLineItem {
   description: string;
   quantity?: number;
-  unitPrice?: number;
-  totalPrice?: number;
+  amount_ttc?: number;
+  confidence: number;
 }
 
 export interface OcrResult {
-  invoiceNumber?: string;
+  // Core fields
+  merchantName?: string;
+  merchantNameConfidence: number;
   purchaseDate?: Date;
-  vendorName?: string;
-  vendorAddress?: string;
-  brandName?: string;
-  itemDescription?: string;
-  currency?: string;
-  subtotalAmount?: number;
-  taxAmount?: number;
+  purchaseDateConfidence: number;
   grandTotalAmount?: number;
-  confidence: number; // 0.0 – 1.0
+  grandTotalAmountConfidence: number;
+  // Non-core fields
+  buyerName?: string;
+  lineItems: OcrLineItem[];
+  // Validation
+  arithmeticCheck?: string; // "pass" | "fail"
+  needsReview: boolean;
+  reviewReasons: string[];
+  // Legacy / general invoice fields kept for backwards compat
+  vendorName?: string;       // alias: same value as merchantName
+  brandName?: string;
+  currency?: string;
+  // Overall
+  confidence: number;
   rawJson: Record<string, unknown>;
 }
 
 /** Shape returned by the Python OCR microservice */
+interface ExtractedFieldRaw {
+  value: unknown;
+  confidence: number;
+}
+interface LineItemRaw {
+  description: string;
+  quantity?: number;
+  amount_ttc?: number;
+  confidence: number;
+}
 interface OcrServiceResponse {
-  invoice_number?: string;
-  purchase_date?: string;
-  vendor_name?: string;
-  vendor_address?: string;
-  brand_name?: string;
-  item_description?: string;
-  currency?: string;
-  subtotal_amount?: number;
-  tax_amount?: number;
-  grand_total_amount?: number;
+  merchant_name?: ExtractedFieldRaw;
+  purchase_date?: ExtractedFieldRaw;
+  grand_total_amount?: ExtractedFieldRaw;
+  buyer_name?: ExtractedFieldRaw;
+  line_items?: LineItemRaw[];
+  arithmetic_check?: string;
+  needs_review?: boolean;
+  review_reasons?: string[];
   confidence: number;
   raw_text: string;
 }
@@ -68,7 +85,7 @@ export class OcrService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
-        signal: AbortSignal.timeout(120_000), // 2 min timeout for large PDFs
+        signal: AbortSignal.timeout(120_000),
       });
 
       if (!res.ok) {
@@ -76,32 +93,69 @@ export class OcrService {
         throw new Error(`OCR service responded ${res.status}: ${text}`);
       }
 
-      const data = await res.json() as OcrServiceResponse;
+      const data = (await res.json()) as OcrServiceResponse;
       return this._mapResponse(data);
     } catch (err) {
       this.logger.error('OCR microservice call failed', err);
-      return { confidence: 0, rawJson: { error: String(err) } };
+      return {
+        merchantNameConfidence: 0,
+        purchaseDateConfidence: 0,
+        grandTotalAmountConfidence: 0,
+        lineItems: [],
+        needsReview: true,
+        reviewReasons: ['OCR service call failed'],
+        confidence: 0,
+        rawJson: { error: String(err) },
+      };
     }
   }
 
   private _mapResponse(data: OcrServiceResponse): OcrResult {
+    const merchantField = data.merchant_name;
+    const dateField = data.purchase_date;
+    const totalField = data.grand_total_amount;
+    const buyerField = data.buyer_name;
+
     let purchaseDate: Date | undefined;
-    if (data.purchase_date) {
-      const parsed = new Date(data.purchase_date);
+    const rawDate = dateField?.value;
+    if (rawDate && typeof rawDate === 'string') {
+      // BVE dates come as DD/MM/YYYY — normalise to ISO before parsing
+      const normalised = rawDate.replace(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/, (_, d, m, y) => {
+        const year = y.length === 2 ? `20${y}` : y;
+        return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      });
+      const parsed = new Date(normalised);
       if (!isNaN(parsed.getTime())) purchaseDate = parsed;
     }
 
+    const merchantName =
+      merchantField?.value != null ? String(merchantField.value) : undefined;
+    const grandTotalAmount =
+      totalField?.value != null ? Number(totalField.value) : undefined;
+    const buyerName =
+      buyerField?.value != null ? String(buyerField.value) : undefined;
+
+    const lineItems: OcrLineItem[] = (data.line_items ?? []).map((li) => ({
+      description: li.description,
+      quantity: li.quantity,
+      amount_ttc: li.amount_ttc,
+      confidence: li.confidence,
+    }));
+
     return {
-      invoiceNumber: data.invoice_number,
+      merchantName,
+      merchantNameConfidence: merchantField?.confidence ?? 0,
       purchaseDate,
-      vendorName: data.vendor_name,
-      vendorAddress: data.vendor_address,
-      brandName: data.brand_name,
-      itemDescription: data.item_description,
-      currency: data.currency,
-      subtotalAmount: data.subtotal_amount,
-      taxAmount: data.tax_amount,
-      grandTotalAmount: data.grand_total_amount,
+      purchaseDateConfidence: dateField?.confidence ?? 0,
+      grandTotalAmount,
+      grandTotalAmountConfidence: totalField?.confidence ?? 0,
+      buyerName,
+      lineItems,
+      arithmeticCheck: data.arithmetic_check,
+      needsReview: data.needs_review ?? false,
+      reviewReasons: data.review_reasons ?? [],
+      // Legacy alias kept so existing code that reads vendorName still works
+      vendorName: merchantName,
       confidence: data.confidence,
       rawJson: data as unknown as Record<string, unknown>,
     };
@@ -109,42 +163,25 @@ export class OcrService {
 
   private _mockResult(): OcrResult {
     return {
-      invoiceNumber: `INV-DEV-${Date.now()}`,
-      purchaseDate: new Date(),
-      vendorName: 'Louis Vuitton Paris — Champs-Élysées',
-      vendorAddress: '101 Avenue des Champs-Élysées, 75008 Paris',
-      brandName: 'Louis Vuitton',
-      itemDescription: 'Sac Neverfull MM Monogram Canvas',
+      merchantName: 'LA SAMARITAINE',
+      merchantNameConfidence: 0.95,
+      purchaseDate: new Date('2025-09-21'),
+      purchaseDateConfidence: 0.91,
+      grandTotalAmount: 10603.0,
+      grandTotalAmountConfidence: 0.98,
+      buyerName: 'MAI LIDA',
+      lineItems: [
+        { description: 'MOD-ACCESSOIRES CHRISTIAN DIOR', quantity: 2, amount_ttc: 1380.0, confidence: 0.88 },
+        { description: 'PARFUM DIOR MISS DIOR 100ML', quantity: 1, amount_ttc: 134.0, confidence: 0.85 },
+      ],
+      arithmeticCheck: 'fail', // mock: items don't sum to 10603 intentionally
+      needsReview: false,
+      reviewReasons: [],
+      vendorName: 'LA SAMARITAINE',
+      brandName: 'Christian Dior',
       currency: 'EUR',
-      subtotalAmount: 1450.0,
-      taxAmount: 181.25,
-      grandTotalAmount: 1631.25,
-      confidence: 0.97,
+      confidence: 0.95,
       rawJson: { mode: 'bypass', note: 'Set BYPASS_OCR=false to use real PaddleOCR' },
     };
   }
 }
-
-
-export interface OcrLineItem {
-  description: string;
-  quantity?: number;
-  unitPrice?: number;
-  totalPrice?: number;
-}
-
-export interface OcrResult {
-  invoiceNumber?: string;
-  purchaseDate?: Date;
-  vendorName?: string;
-  vendorAddress?: string;
-  brandName?: string;
-  itemDescription?: string;
-  currency?: string;
-  subtotalAmount?: number;
-  taxAmount?: number;
-  grandTotalAmount?: number;
-  confidence: number; // 0.0 – 1.0
-  rawJson: Record<string, unknown>;
-}
-
