@@ -75,6 +75,19 @@ export class AdminController {
   }
 
   /**
+   * PATCH /api/v1/admin/invoices/:id/correct
+   * Manually correct OCR-extracted fields and clear the needsReview flag.
+   */
+  @Patch('invoices/:id/correct')
+  @HttpCode(HttpStatus.OK)
+  correctInvoice(
+    @Param('id') invoiceId: string,
+    @Body() dto: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
+  ) {
+    return this.adminService.correctInvoice(invoiceId, dto);
+  }
+
+  /**
    * PATCH /api/v1/admin/users/:id/cashback-rate
    * Update a buyer's cashback rate.
    */

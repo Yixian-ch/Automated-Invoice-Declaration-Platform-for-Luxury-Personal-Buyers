@@ -270,4 +270,15 @@ export const adminApi = {
       body: { cashbackRate },
       token,
     }),
+
+  correctInvoice: (
+    token: string,
+    invoiceId: string,
+    data: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
+  ) =>
+    request<Invoice>(`/admin/invoices/${invoiceId}/correct`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
 };

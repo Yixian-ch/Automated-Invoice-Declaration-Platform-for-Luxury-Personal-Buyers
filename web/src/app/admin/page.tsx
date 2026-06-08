@@ -15,6 +15,12 @@ export default function AdminReviewPage() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [correction, setCorrection] = useState<{
+    vendorName: string;
+    purchaseDate: string;
+    grandTotalAmount: string;
+  } | null>(null);
+  const [correcting, setCorrecting] = useState(false);
 
   const load = async () => {
     if (!accessToken) return;
@@ -35,7 +41,20 @@ export default function AdminReviewPage() {
   };
 
   useEffect(() => { load(); }, [accessToken]);
-  useEffect(() => { setImgError(false); }, [selected?.id]);
+  useEffect(() => {
+    setImgError(false);
+    if (selected?.needsReview) {
+      setCorrection({
+        vendorName: selected.vendorName ?? '',
+        purchaseDate: selected.purchaseDate
+          ? selected.purchaseDate.slice(0, 10)
+          : '',
+        grandTotalAmount: selected.grandTotalAmount ?? '',
+      });
+    } else {
+      setCorrection(null);
+    }
+  }, [selected?.id]);
 
   const handleApprove = async () => {
     if (!accessToken || !selected) return;
@@ -67,6 +86,25 @@ export default function AdminReviewPage() {
       toast.error(e.message ?? 'Failed to reject');
     } finally {
       setActing(false);
+    }
+  };
+
+  const handleCorrect = async () => {
+    if (!accessToken || !selected || !correction) return;
+    setCorrecting(true);
+    try {
+      await adminApi.correctInvoice(accessToken, selected.id, {
+        vendorName: correction.vendorName || undefined,
+        purchaseDate: correction.purchaseDate || undefined,
+        grandTotalAmount: correction.grandTotalAmount || undefined,
+      });
+      toast.success('Corrections saved');
+      setCorrection(null);
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to save corrections');
+    } finally {
+      setCorrecting(false);
     }
   };
 
@@ -159,6 +197,58 @@ export default function AdminReviewPage() {
                   </tbody>
                 </table>
               </div>
+
+              {correction && (
+                <div className="border border-amber-200 rounded-lg p-4 bg-amber-50 space-y-3">
+                  <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">
+                    手动更正
+                  </p>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs text-stone-500 mb-0.5">门店名</label>
+                      <input
+                        type="text"
+                        value={correction.vendorName}
+                        onChange={(e) =>
+                          setCorrection((c) => c && { ...c, vendorName: e.target.value })
+                        }
+                        className="w-full border border-stone-200 rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#B8966E]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 mb-0.5">日期</label>
+                      <input
+                        type="date"
+                        value={correction.purchaseDate}
+                        onChange={(e) =>
+                          setCorrection((c) => c && { ...c, purchaseDate: e.target.value })
+                        }
+                        className="w-full border border-stone-200 rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#B8966E]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-stone-500 mb-0.5">总金额</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={correction.grandTotalAmount}
+                        onChange={(e) =>
+                          setCorrection((c) => c && { ...c, grandTotalAmount: e.target.value })
+                        }
+                        className="w-full border border-stone-200 rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#B8966E]"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCorrect}
+                    disabled={correcting}
+                    className="w-full py-1.5 rounded bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {correcting ? '保存中…' : '保存更正'}
+                  </button>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs text-stone-500 mb-1">
