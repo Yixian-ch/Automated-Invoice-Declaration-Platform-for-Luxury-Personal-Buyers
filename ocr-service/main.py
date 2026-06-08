@@ -459,6 +459,9 @@ def _extract_bve(
             # Skip rows whose description is a column header phrase
             if _DESC_HDR_RE.search(description):
                 continue
+            # Skip non-product rows (dates, payment notes, totals, etc.)
+            if re.search(r"(date|mode de paiement|montant total|montant de la|cette somme|remboursement)", description, re.IGNORECASE):
+                continue
 
             # Quantity: boxes in Quantité column, exclude "%" and values > 10
             qty: Optional[float] = None
