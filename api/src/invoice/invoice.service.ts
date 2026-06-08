@@ -259,6 +259,12 @@ export class InvoiceService {
     return this.prisma.invoice.update({ where: { id: invoiceId }, data });
   }
 
+  async deleteInvoice(invoiceId: string): Promise<void> {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    await this.prisma.invoice.delete({ where: { id: invoiceId } });
+  }
+
   async getFileMeta(invoiceId: string): Promise<{ mimeType: string | null } | null> {
     return this.prisma.invoice.findUnique({
       where: { id: invoiceId },

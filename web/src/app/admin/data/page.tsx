@@ -16,6 +16,18 @@ export default function AdminDataPage() {
   const [userIdFilter, setUserIdFilter] = useState('');
   const [page, setPage] = useState(1);
 
+  const handleDelete = async (invoiceId: string) => {
+    if (!accessToken) return;
+    if (!window.confirm('确认删除这张小票？此操作不可撤销。')) return;
+    try {
+      await adminApi.deleteInvoice(accessToken, invoiceId);
+      toast.success('Invoice deleted');
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to delete invoice');
+    }
+  };
+
   const load = async () => {
     if (!accessToken) return;
     setLoading(true);
@@ -77,12 +89,13 @@ export default function AdminDataPage() {
                 <th className="text-right px-4 py-3 font-medium">Amount</th>
                 <th className="text-right px-4 py-3 font-medium">Cashback</th>
                 <th className="text-left px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-stone-400">No records</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-stone-400">No records</td>
                 </tr>
               ) : (
                 invoices.map((inv) => (
@@ -108,6 +121,15 @@ export default function AdminDataPage() {
                       }`}>
                         {inv.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <button
+                        onClick={() => handleDelete(inv.id)}
+                        className="text-stone-300 hover:text-red-500 transition-colors text-xs"
+                        title="Delete invoice"
+                      >
+                        ✕
+                      </button>
                     </td>
                   </tr>
                 ))

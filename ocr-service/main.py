@@ -88,9 +88,16 @@ def _image_to_array(data: bytes) -> list[np.ndarray]:
     return [np.array(img)]
 
 
-def _run_ocr(arrays: list[np.ndarray]) -> tuple[list[str], float]:
-    """Run PaddleOCR; group word boxes into logical lines by Y proximity."""
-    all_boxes: list[tuple[float, float, str, float]] = []
+def _run_ocr(
+    arrays: list[np.ndarray],
+) -> tuple[list[str], float, list[tuple[float, float, float, str, float]]]:
+    """Run PaddleOCR; group word boxes into logical lines by Y proximity.
+
+    Returns (lines, avg_confidence, raw_boxes) where raw_boxes is a flat list
+    of (y_mid, x_min, x_max, text, conf) sorted by (y_mid, x_min), preserving
+    individual word-level coordinates for column-aware extraction.
+    """
+    all_boxes: list[tuple[float, float, float, str, float]] = []
 
     for arr in arrays:
         result = ocr_engine.ocr(arr, cls=True)
@@ -108,16 +115,17 @@ def _run_ocr(arrays: list[np.ndarray]) -> tuple[list[str], float]:
                 xs = [pt[0] for pt in box]
                 y_mid = (min(ys) + max(ys)) / 2
                 x_min = min(xs)
-                all_boxes.append((y_mid, x_min, text, float(conf)))
+                x_max = max(xs)
+                all_boxes.append((y_mid, x_min, x_max, text, float(conf)))
 
     if not all_boxes:
-        return [], 0.0
+        return [], 0.0, []
 
     all_boxes.sort(key=lambda b: (b[0], b[1]))
 
     lines: list[str] = []
     confidences: list[float] = []
-    current_row: list[tuple[float, float, str, float]] = []
+    current_row: list[tuple[float, float, float, str, float]] = []
     row_y: float = all_boxes[0][0]
 
     for box in all_boxes:
@@ -126,18 +134,18 @@ def _run_ocr(arrays: list[np.ndarray]) -> tuple[list[str], float]:
         else:
             if current_row:
                 current_row.sort(key=lambda b: b[1])
-                lines.append(" ".join(b[2] for b in current_row))
-                confidences.extend(b[3] for b in current_row)
+                lines.append(" ".join(b[3] for b in current_row))
+                confidences.extend(b[4] for b in current_row)
             current_row = [box]
             row_y = box[0]
 
     if current_row:
         current_row.sort(key=lambda b: b[1])
-        lines.append(" ".join(b[2] for b in current_row))
-        confidences.extend(b[3] for b in current_row)
+        lines.append(" ".join(b[3] for b in current_row))
+        confidences.extend(b[4] for b in current_row)
 
     avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
-    return lines, avg_conf
+    return lines, avg_conf, all_boxes
 
 
 # ─── Amount parsing ───────────────────────────────────────────────────────────
@@ -204,27 +212,73 @@ def _is_bve(lines: list[str]) -> bool:
     return bool(_BVE_MARKER_RE.search(full))
 
 
-def _extract_bve(lines: list[str]) -> OcrResult:
-    """BVE-specialised extractor: section-aware, per-field confidence."""
+_COL_TOLERANCE = 50  # px — how far outside a header's x range we still accept
+
+
+def _col_boxes(
+    boxes: list[tuple[float, float, float, str, float]],
+    hdr_box: tuple[float, float, float, str, float],
+) -> list[tuple[float, float, float, str, float]]:
+    """Return boxes strictly below hdr_box whose x range overlaps the header column."""
+    hdr_y = hdr_box[0]
+    col_x_min = hdr_box[1] - _COL_TOLERANCE
+    col_x_max = hdr_box[2] + _COL_TOLERANCE
+    return [
+        b for b in boxes
+        if b[0] > hdr_y          # below the header
+        and b[1] >= col_x_min    # box starts within column
+        and b[2] <= col_x_max    # box ends within column
+        and b[3].strip()         # non-empty
+    ]
+
+
+def _find_hdr_box(
+    boxes: list[tuple[float, float, float, str, float]],
+    pattern: re.Pattern,
+) -> Optional[tuple[float, float, float, str, float]]:
+    """Find the first raw box whose text matches pattern."""
+    for b in boxes:
+        if pattern.search(b[3]):
+            return b
+    return None
+
+
+def _extract_bve(
+    lines: list[str],
+    boxes: list[tuple[float, float, float, str, float]],
+) -> OcrResult:
+    """BVE-specialised extractor: section-aware, column-filtered, per-field confidence."""
     full_text = "\n".join(lines)
     review_reasons: list[str] = []
 
     # ── merchant_name ──────────────────────────────────────────────────────
+    # BVE has three columns side-by-side: COMMERÇANT | ACHETEUR | OPERATEUR.
+    # OCR merges same-Y boxes into one line, mixing all three columns.
+    # Fix: find the COMMERÇANT header box, then only take boxes directly below
+    # it that fall within that column's X range (± tolerance).
     merchant_name = ExtractedField()
-    for i, line in enumerate(lines):
-        if _BVE_MERCHANT_HDR_RE.search(line):
-            # The merchant name is in the next 1-3 non-empty lines
-            for j in range(i + 1, min(i + 4, len(lines))):
-                candidate = lines[j].strip()
-                # Skip short words, numbers, or address-like content
-                if len(candidate) >= 3 and not re.match(r"^\d+", candidate):
-                    # ALL-CAPS name is typical for BVE merchants
-                    conf = 0.93 if candidate.isupper() else 0.78
-                    merchant_name = ExtractedField(value=candidate, confidence=conf)
-                    break
-            break
+    merch_hdr = _find_hdr_box(boxes, _BVE_MERCHANT_HDR_RE)
+    if merch_hdr is not None:
+        col_boxes = _col_boxes(boxes, merch_hdr)
+        for b in col_boxes:
+            candidate = b[3].strip()
+            if len(candidate) >= 3 and not re.match(r"^\d+", candidate):
+                conf = 0.93 if candidate.isupper() else 0.78
+                merchant_name = ExtractedField(value=candidate, confidence=conf)
+                break
+    # Fallback: line-scan (used when boxes are unavailable or column empty)
     if merchant_name.value is None:
-        # Try URL-based fallback (lower confidence)
+        for i, line in enumerate(lines):
+            if _BVE_MERCHANT_HDR_RE.search(line):
+                for j in range(i + 1, min(i + 4, len(lines))):
+                    candidate = lines[j].strip()
+                    if len(candidate) >= 3 and not re.match(r"^\d+", candidate):
+                        conf = 0.93 if candidate.isupper() else 0.78
+                        merchant_name = ExtractedField(value=candidate, confidence=conf)
+                        break
+                break
+    if merchant_name.value is None:
+        # URL-based fallback (lower confidence)
         for line in lines:
             lower = line.lower()
             for known, name in [
@@ -252,7 +306,6 @@ def _extract_bve(lines: list[str]) -> OcrResult:
     if m:
         purchase_date = ExtractedField(value=m.group(1), confidence=0.93)
     else:
-        # Generic date after "date" keywords
         for line in lines:
             if re.search(r"\bdate\b", line, re.IGNORECASE):
                 dm = _DATE_RE.search(line)
@@ -280,27 +333,46 @@ def _extract_bve(lines: list[str]) -> OcrResult:
                     grand_total = ExtractedField(value=amt, confidence=0.70)
                     break
 
-    # ── buyer_name ─────────────────────────────────────────────────────────
+    # ── buyer_name — also column-filtered to avoid OPERATEUR text ──────────
     buyer_name = ExtractedField()
-    for i, line in enumerate(lines):
-        if _BVE_BUYER_HDR_RE.search(line):
-            nom: Optional[str] = None
-            prenom: Optional[str] = None
-            for j in range(i + 1, min(i + 8, len(lines))):
-                chunk = lines[j].strip()
-                nm = re.search(r"[Nn]om\s*[:\-]?\s*(.+)", chunk)
-                pm = re.search(r"[Pp]r[ée]nom\s*[:\-]?\s*(.+)", chunk)
-                if nm:
-                    nom = nm.group(1).strip()
-                if pm:
-                    prenom = pm.group(1).strip()
-                # Sometimes one line: "NOM Prénom NOM_VALUE"
-                if not nm and not pm and re.match(r"^[A-Z]{2,}", chunk):
-                    nom = chunk
-            if nom or prenom:
-                parts = " ".join(p for p in [prenom, nom] if p)
-                buyer_name = ExtractedField(value=parts or None, confidence=0.82)
-            break
+    buyer_hdr = _find_hdr_box(boxes, _BVE_BUYER_HDR_RE)
+    if buyer_hdr is not None:
+        col_boxes = _col_boxes(boxes, buyer_hdr)
+        nom: Optional[str] = None
+        prenom: Optional[str] = None
+        for b in col_boxes[:8]:
+            chunk = b[3].strip()
+            nm = re.search(r"[Nn]om\s*[:\-]?\s*(.+)", chunk)
+            pm = re.search(r"[Pp]r[ée]nom\s*[:\-]?\s*(.+)", chunk)
+            if nm:
+                nom = nm.group(1).strip()
+            if pm:
+                prenom = pm.group(1).strip()
+            if not nm and not pm and re.match(r"^[A-Z]{2,}", chunk):
+                nom = chunk
+        if nom or prenom:
+            parts = " ".join(p for p in [prenom, nom] if p)
+            buyer_name = ExtractedField(value=parts or None, confidence=0.82)
+    # Fallback: line-scan
+    if buyer_name.value is None:
+        for i, line in enumerate(lines):
+            if _BVE_BUYER_HDR_RE.search(line):
+                nom = None
+                prenom = None
+                for j in range(i + 1, min(i + 8, len(lines))):
+                    chunk = lines[j].strip()
+                    nm = re.search(r"[Nn]om\s*[:\-]?\s*(.+)", chunk)
+                    pm = re.search(r"[Pp]r[ée]nom\s*[:\-]?\s*(.+)", chunk)
+                    if nm:
+                        nom = nm.group(1).strip()
+                    if pm:
+                        prenom = pm.group(1).strip()
+                    if not nm and not pm and re.match(r"^[A-Z]{2,}", chunk):
+                        nom = chunk
+                if nom or prenom:
+                    parts = " ".join(p for p in [prenom, nom] if p)
+                    buyer_name = ExtractedField(value=parts or None, confidence=0.82)
+                break
 
     # ── line_items ─────────────────────────────────────────────────────────
     line_items: list[LineItem] = []
@@ -483,11 +555,11 @@ def process(req: ProcessRequest):
         else:
             arrays = _image_to_array(data)
 
-        lines, _ = _run_ocr(arrays)
+        lines, _, boxes = _run_ocr(arrays)
 
         if _is_bve(lines):
             logger.info("Detected BVE document — using BVE extractor")
-            result = _extract_bve(lines)
+            result = _extract_bve(lines, boxes)
         else:
             logger.info("Non-BVE document — using generic extractor")
             result = _extract_generic(lines)
