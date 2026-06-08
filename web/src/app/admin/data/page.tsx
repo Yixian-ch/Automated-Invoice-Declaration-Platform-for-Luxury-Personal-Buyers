@@ -5,10 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { adminApi, AdminInvoice, InvoiceStatus } from '@/lib/api';
 import { toast } from 'sonner';
 
-const ALL_STATUSES: InvoiceStatus[] = [
-  'PENDING_UPLOAD', 'UPLOADED', 'OCR_PROCESSING', 'OCR_DONE',
-  'FRAUD_REVIEW', 'APPROVED', 'REJECTED', 'BLACKLISTED',
-];
+const ALL_STATUSES: InvoiceStatus[] = ['PENDING', 'APPROVED', 'REJECTED'];
 
 export default function AdminDataPage() {
   const { accessToken } = useAuth();
@@ -107,7 +104,6 @@ export default function AdminDataPage() {
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                         inv.status === 'APPROVED' ? 'bg-green-50 text-green-700' :
                         inv.status === 'REJECTED' ? 'bg-red-50 text-red-700' :
-                        inv.status === 'BLACKLISTED' ? 'bg-red-100 text-red-900' :
                         'bg-stone-100 text-stone-600'
                       }`}>
                         {inv.status}

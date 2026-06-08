@@ -9,6 +9,7 @@ const NAV = [
   { href: '/admin', label: 'Invoice Review' },
   { href: '/admin/data', label: 'Data Table' },
   { href: '/admin/reconciliation', label: 'Bill Check' },
+  { href: '/admin/cashback-rates', label: 'Cashback Rates' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

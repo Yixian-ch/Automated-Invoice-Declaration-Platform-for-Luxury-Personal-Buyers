@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export type ReconciliationRow = {
@@ -114,5 +115,40 @@ export class AdminService {
   /** List all merchant bills. */
   async listMerchantBills() {
     return this.prisma.merchantBill.findMany({ orderBy: { date: 'desc' } });
+  }
+
+  async listBuyerUsers() {
+    return this.prisma.user.findMany({
+      where: { role: UserRole.RESELLER },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        cashbackRate: true,
+      },
+      orderBy: { email: 'asc' },
+    });
+  }
+
+  async updateUserCashbackRate(userId: string, cashbackRate: number) {
+    if (typeof cashbackRate !== 'number' || Number.isNaN(cashbackRate)) {
+      throw new BadRequestException('cashbackRate must be a number');
+    }
+    if (cashbackRate < 0 || cashbackRate > 1) {
+      throw new BadRequestException('cashbackRate must be between 0 and 1');
+    }
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { cashbackRate: cashbackRate.toString() },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        cashbackRate: true,
+      },
+    });
   }
 }

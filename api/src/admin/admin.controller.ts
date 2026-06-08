@@ -2,7 +2,9 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
+  Param,
   Query,
   UseGuards,
   HttpCode,
@@ -61,5 +63,26 @@ export class AdminController {
   @Get('merchant-bills')
   listMerchantBills() {
     return this.adminService.listMerchantBills();
+  }
+
+  /**
+   * GET /api/v1/admin/users
+   * List all buyer users for cashback rate management.
+   */
+  @Get('users')
+  listUsers() {
+    return this.adminService.listBuyerUsers();
+  }
+
+  /**
+   * PATCH /api/v1/admin/users/:id/cashback-rate
+   * Update a buyer's cashback rate.
+   */
+  @Patch('users/:id/cashback-rate')
+  updateCashbackRate(
+    @Param('id') userId: string,
+    @Body() body: { cashbackRate: number },
+  ) {
+    return this.adminService.updateUserCashbackRate(userId, body.cashbackRate);
   }
 }

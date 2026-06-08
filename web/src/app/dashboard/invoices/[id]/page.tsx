@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { invoiceApi, type Invoice, type InvoiceStatus } from '@/lib/api';
@@ -9,30 +9,16 @@ import { Badge } from '@/components/ui/badge';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
-  PENDING_UPLOAD: 'Pending',
-  UPLOADED: 'Pending',
-  OCR_PROCESSING: 'Pending',
-  OCR_DONE: 'Pending',
-  NEEDS_REVIEW: 'Reviewing',
-  FRAUD_REVIEW: 'Reviewing',
+  PENDING: 'Pending',
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
-  BLACKLISTED: 'Rejected',
 };
 
 const STATUS_VARIANT: Record<InvoiceStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  PENDING_UPLOAD: 'outline',
-  UPLOADED: 'secondary',
-  OCR_PROCESSING: 'secondary',
-  OCR_DONE: 'secondary',
-  NEEDS_REVIEW: 'outline',
-  FRAUD_REVIEW: 'outline',
+  PENDING: 'outline',
   APPROVED: 'default',
   REJECTED: 'destructive',
-  BLACKLISTED: 'destructive',
 };
-
-const PROCESSING_STATUSES: InvoiceStatus[] = ['PENDING_UPLOAD', 'UPLOADED', 'OCR_PROCESSING'];
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -52,8 +38,6 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
-
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchInvoice = async () => {
     if (!accessToken || !id) return;
@@ -77,16 +61,6 @@ export default function InvoiceDetailPage() {
     if (!accessToken) return;
     fetchInvoice();
   }, [accessToken, id]);
-
-  // Poll while OCR is still running
-  useEffect(() => {
-    if (!invoice) return;
-    if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
-    if (PROCESSING_STATUSES.includes(invoice.status) && accessToken) {
-      pollRef.current = setTimeout(fetchInvoice, 4000);
-    }
-    return () => { if (pollRef.current) clearTimeout(pollRef.current); };
-  }, [invoice?.status, accessToken]);
 
   if (authLoading || loading) {
     return (
@@ -112,7 +86,6 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  const isProcessing = PROCESSING_STATUSES.includes(invoice.status);
   const isApproved = invoice.status === 'APPROVED';
   const imageUrl = `${API_BASE}/api/v1/invoices/${id}/image`;
 
@@ -167,84 +140,74 @@ export default function InvoiceDetailPage() {
 
           {/* Right — OCR results */}
           <div className="card-luxury">
-            {isProcessing ? (
-              <div className="flex flex-col items-center justify-center h-full min-h-[200px] space-y-4 text-center">
-                <div className="w-6 h-6 border-2 border-gold border-t-transparent rounded-full animate-spin" />
-                <p className="text-sm text-muted">Analyzing receipt…</p>
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs tracking-widest uppercase text-muted">OCR Results</p>
+                <Badge variant={STATUS_VARIANT[invoice.status]}>
+                  {STATUS_LABEL[invoice.status]}
+                </Badge>
+              </div>
+
+              <div className="divide-y divide-stone-100">
+                <Field label="Store" value={invoice.vendorName} />
+                <Field label="Brand" value={invoice.brandName} />
+                <Field
+                  label="Purchase Date"
+                  value={
+                    invoice.purchaseDate
+                      ? new Date(invoice.purchaseDate).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: 'long',
+                          year: 'numeric',
+                        })
+                      : null
+                  }
+                />
+                <Field
+                  label="Amount"
+                  value={
+                    invoice.grandTotalAmount
+                      ? `${invoice.currency ?? '€'} ${Number(invoice.grandTotalAmount).toFixed(2)}`
+                      : null
+                  }
+                />
+                <Field
+                  label="OCR Confidence"
+                  value={
+                    confidence ? (
+                      <span className={Number(invoice.ocrConfidence) >= 0.8 ? 'text-green-700' : 'text-amber-600'}>
+                        {confidence}
+                      </span>
+                    ) : null
+                  }
+                />
+                {isApproved && (
+                  <div className="py-3">
+                    <p className="text-xs tracking-widest uppercase text-muted mb-0.5">Cashback</p>
+                    <p className="text-xl font-light text-gold" style={{ fontFamily: 'var(--font-serif)' }}>
+                      {invoice.cashbackAmount
+                        ? `€${Number(invoice.cashbackAmount).toFixed(2)}`
+                        : '—'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-stone-100">
                 <p className="text-xs text-stone-400">
-                  This usually takes 10–30 seconds. The page will update automatically.
+                  Uploaded{' '}
+                  {invoice.uploadedAt
+                    ? new Date(invoice.uploadedAt).toLocaleString('fr-FR', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })
+                    : new Date(invoice.createdAt).toLocaleString('fr-FR', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
                 </p>
               </div>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-xs tracking-widest uppercase text-muted">OCR Results</p>
-                  <Badge variant={STATUS_VARIANT[invoice.status]}>
-                    {STATUS_LABEL[invoice.status]}
-                  </Badge>
-                </div>
-
-                <div className="divide-y divide-stone-100">
-                  <Field label="Store" value={invoice.vendorName} />
-                  <Field label="Brand" value={invoice.brandName} />
-                  <Field
-                    label="Purchase Date"
-                    value={
-                      invoice.purchaseDate
-                        ? new Date(invoice.purchaseDate).toLocaleDateString('fr-FR', {
-                            day: '2-digit',
-                            month: 'long',
-                            year: 'numeric',
-                          })
-                        : null
-                    }
-                  />
-                  <Field
-                    label="Amount"
-                    value={
-                      invoice.grandTotalAmount
-                        ? `${invoice.currency ?? '€'} ${Number(invoice.grandTotalAmount).toFixed(2)}`
-                        : null
-                    }
-                  />
-                  <Field
-                    label="OCR Confidence"
-                    value={
-                      confidence ? (
-                        <span className={Number(invoice.ocrConfidence) >= 0.8 ? 'text-green-700' : 'text-amber-600'}>
-                          {confidence}
-                        </span>
-                      ) : null
-                    }
-                  />
-                  {isApproved && (
-                    <div className="py-3">
-                      <p className="text-xs tracking-widest uppercase text-muted mb-0.5">Cashback</p>
-                      <p className="text-xl font-light text-gold" style={{ fontFamily: 'var(--font-serif)' }}>
-                        {invoice.cashbackAmount
-                          ? `€${Number(invoice.cashbackAmount).toFixed(2)}`
-                          : '—'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-6 pt-4 border-t border-stone-100">
-                  <p className="text-xs text-stone-400">
-                    Uploaded{' '}
-                    {invoice.uploadedAt
-                      ? new Date(invoice.uploadedAt).toLocaleString('fr-FR', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })
-                      : new Date(invoice.createdAt).toLocaleString('fr-FR', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
-                  </p>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
