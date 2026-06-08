@@ -244,6 +244,21 @@ export class InvoiceService {
     });
   }
 
+  async correctInvoice(
+    invoiceId: string,
+    dto: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
+  ) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const data: Record<string, unknown> = { needsReview: false };
+    if (dto.vendorName !== undefined) data.vendorName = dto.vendorName;
+    if (dto.purchaseDate !== undefined) data.purchaseDate = new Date(dto.purchaseDate);
+    if (dto.grandTotalAmount !== undefined) data.grandTotalAmount = dto.grandTotalAmount;
+
+    return this.prisma.invoice.update({ where: { id: invoiceId }, data });
+  }
+
   async getFileMeta(invoiceId: string): Promise<{ mimeType: string | null } | null> {
     return this.prisma.invoice.findUnique({
       where: { id: invoiceId },

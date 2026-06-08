@@ -276,7 +276,7 @@ export const adminApi = {
     invoiceId: string,
     data: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
   ) =>
-    request<Invoice>(`/admin/invoices/${invoiceId}/correct`, {
+    request<Invoice>(`/invoices/${invoiceId}/correct`, {
       method: 'PATCH',
       body: data,
       token,
