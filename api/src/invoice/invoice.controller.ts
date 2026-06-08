@@ -28,12 +28,24 @@ import { Public } from '../auth/decorators/public.decorator';
 import { UserRole } from '@prisma/client';
 
 import { InvoiceService } from './invoice.service';
+import { OcrService } from '../ocr/ocr.service';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class InvoiceController {
-  constructor(private readonly invoiceService: InvoiceService) {}
+  constructor(
+    private readonly invoiceService: InvoiceService,
+    private readonly ocrService: OcrService,
+  ) {}
+
+  @Post('test-ocr')
+  @Public()
+  async testOcr(@Body() body: { content: string; mime_type: string }) {
+    const buf = Buffer.from(body.content, 'base64');
+    const result = await this.ocrService.processDocument(buf, body.mime_type);
+    return result;
+  }
 
   /**
    * POST /api/v1/invoices/upload-url

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Mistral } from '@mistralai/mistralai';
+import { Anthropic } from '@anthropic-ai/sdk';
 
 export interface OcrLineItem {
   description: string;
@@ -368,12 +368,12 @@ function extractGeneric(lines: string[]): RawOcrResult {
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
-  private readonly mistral: Mistral;
+  private readonly anthropic: Anthropic;
   private readonly bypassOcr: boolean;
 
   constructor(private readonly config: ConfigService) {
-    this.mistral = new Mistral({
-      apiKey: config.get<string>('Mistral_OCR_API', ''),
+    this.anthropic = new Anthropic({
+      apiKey: config.get<string>('Claude_OCR_API', ''),
     });
     this.bypassOcr =
       config.get<string>('NODE_ENV') !== 'production' &&
@@ -394,13 +394,31 @@ export class OcrService {
         ? { type: 'document_url' as const, documentUrl: `data:${mimeType};base64,${base64}` }
         : { type: 'image_url' as const, imageUrl: `data:${mimeType};base64,${base64}` };
 
-      const response = await (this.mistral.ocr as any).process({
-        model: 'mistral-ocr-latest',
-        document,
-      });
+      const response = await this.anthropic.messages.create({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 2048,
+            messages: [{
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: mimeType as any,
+                    data: base64,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: 'Please extract all text from this document. Return only the raw text, preserving the layout as much as possible.',
+                },
+              ],
+            }],
+          });
 
-      const text: string = (response.pages as any[])
-        .map((p: any) => p.markdown as string)
+      const text: string = response.content
+        .filter(b => b.type === 'text')
+        .map(b => (b as any).text)
         .join('\n');
 
       const lines = text
@@ -411,17 +429,11 @@ export class OcrService {
       const raw = isBve(lines) ? extractBve(lines) : extractGeneric(lines);
       return this._mapRawResult(raw);
     } catch (err) {
-      this.logger.error('Mistral OCR call failed', err);
-      return {
-        merchantNameConfidence: 0,
-        purchaseDateConfidence: 0,
-        grandTotalAmountConfidence: 0,
-        lineItems: [],
-        needsReview: true,
-        reviewReasons: ['OCR service call failed'],
-        confidence: 0,
-        rawJson: { error: String(err) },
-      };
+      this.logger.error('Claude OCR call failed: ' + String(err));
+      if (err instanceof Error) {
+        this.logger.error('Stack: ' + err.stack);
+      }
+      throw err;
     }
   }
 
