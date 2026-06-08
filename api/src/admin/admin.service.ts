@@ -1,12 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-
-export type CorrectInvoiceDto = {
-  vendorName?: string;
-  purchaseDate?: string;
-  grandTotalAmount?: string;
-};
 
 export type ReconciliationRow = {
   merchant_name: string;
@@ -135,18 +129,6 @@ export class AdminService {
       },
       orderBy: { email: 'asc' },
     });
-  }
-
-  async correctInvoice(invoiceId: string, dto: CorrectInvoiceDto) {
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
-    if (!invoice) throw new NotFoundException('Invoice not found');
-
-    const data: Record<string, unknown> = { needsReview: false };
-    if (dto.vendorName !== undefined) data.vendorName = dto.vendorName;
-    if (dto.purchaseDate !== undefined) data.purchaseDate = new Date(dto.purchaseDate);
-    if (dto.grandTotalAmount !== undefined) data.grandTotalAmount = dto.grandTotalAmount;
-
-    return this.prisma.invoice.update({ where: { id: invoiceId }, data });
   }
 
   async updateUserCashbackRate(userId: string, cashbackRate: number) {

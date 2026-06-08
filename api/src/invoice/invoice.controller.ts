@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Put,
+  Patch,
   Get,
   Param,
   Body,
@@ -174,5 +175,19 @@ export class InvoiceController {
     @Body('note') note: string,
   ) {
     return this.invoiceService.reject(user.id, id, note);
+  }
+
+  /**
+   * PATCH /api/v1/invoices/:id/correct
+   * Admin: manually correct OCR-extracted fields and clear needsReview.
+   */
+  @Patch(':id/correct')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async correct(
+    @Param('id') id: string,
+    @Body() dto: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
+  ) {
+    return this.invoiceService.correctInvoice(id, dto);
   }
 }
