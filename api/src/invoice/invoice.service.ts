@@ -244,6 +244,13 @@ export class InvoiceService {
     });
   }
 
+  async getFileMeta(invoiceId: string): Promise<{ mimeType: string | null } | null> {
+    return this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { mimeType: true },
+    });
+  }
+
   // ─── Helpers ───────────────────────────────
 
   private async findOwnInvoice(userId: string, invoiceId: string) {
