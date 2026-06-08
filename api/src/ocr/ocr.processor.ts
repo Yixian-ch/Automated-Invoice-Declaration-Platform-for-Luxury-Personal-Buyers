@@ -40,6 +40,7 @@ export class OcrProcessor {
   async handleOcrJob(job: Job<OcrJobData>): Promise<void> {
     const { invoiceId } = job.data;
     this.logger.log(`Starting OCR for invoice ${invoiceId}`);
+    this.logger.log(`[DEBUG] bypassS3=${this.config.get('BYPASS_S3')} bypassOcr=${this.config.get('BYPASS_OCR')}`);
 
     const bypassOcr =
       this.config.get<string>('NODE_ENV') !== 'production' &&
@@ -59,9 +60,7 @@ export class OcrProcessor {
 
       let buffer: Buffer;
 
-      const bypassS3 =
-        this.config.get<string>('NODE_ENV') !== 'production' &&
-        this.config.get<string>('BYPASS_S3') === 'true';
+      const bypassS3 = this.config.get<string>('BYPASS_S3') === 'true';
 
       if (bypassOcr) {
         // Skip S3 download — OcrService will return mock data
@@ -71,10 +70,12 @@ export class OcrProcessor {
         // BYPASS_S3=true, BYPASS_OCR=false: read from local uploads dir (written by dev-sink)
         const localPath = path.resolve(process.cwd(), 'uploads', invoiceId);
         this.logger.warn(`[DEV] BYPASS_S3: reading file from local path ${localPath}`);
+        this.logger.log(`[DEBUG] Looking for file at: ${localPath}`);
         if (!fs.existsSync(localPath)) {
           throw new Error(`[DEV] Local file not found for invoice ${invoiceId} at ${localPath}`);
         }
         buffer = fs.readFileSync(localPath);
+        this.logger.log(`[DEBUG] File read, size=${buffer.length}, calling OCR...`);
       } else {
         if (!invoice.s3Key || !invoice.s3Bucket) {
           throw new Error(`Invoice ${invoiceId} has no S3 key`);
@@ -119,7 +120,8 @@ export class OcrProcessor {
         `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}`,
       );
     } catch (err) {
-      this.logger.error(`OCR failed for invoice ${invoiceId}`, err);
+      this.logger.error(`OCR failed for invoice ${invoiceId}: ${String(err)}`);
+      if (err instanceof Error) this.logger.error(err.stack);
 
       await this.prisma.invoice.update({
         where: { id: invoiceId },

@@ -390,31 +390,25 @@ export class OcrService {
       const base64 = content.toString('base64');
       const isPdf = mimeType.toLowerCase().includes('pdf');
 
-      const document = isPdf
-        ? { type: 'document_url' as const, documentUrl: `data:${mimeType};base64,${base64}` }
-        : { type: 'image_url' as const, imageUrl: `data:${mimeType};base64,${base64}` };
+      const mediaSource = { type: 'base64', media_type: mimeType, data: base64 };
+      const contentBlock = isPdf
+        ? { type: 'document', source: mediaSource }
+        : { type: 'image', source: mediaSource };
 
       const response = await this.anthropic.messages.create({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 2048,
-            messages: [{
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: mimeType as any,
-                    data: base64,
-                  },
-                },
-                {
-                  type: 'text',
-                  text: 'Please extract all text from this document. Return only the raw text, preserving the layout as much as possible.',
-                },
-              ],
-            }],
-          });
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
+        messages: [{
+          role: 'user',
+          content: [
+            contentBlock as any,
+            {
+              type: 'text' as const,
+              text: 'Please extract all text from this document. Return only the raw text, preserving the layout as much as possible.',
+            },
+          ],
+        }],
+      });
 
       const text: string = response.content
         .filter(b => b.type === 'text')
