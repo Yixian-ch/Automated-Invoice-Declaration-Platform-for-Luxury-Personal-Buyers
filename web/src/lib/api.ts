@@ -129,6 +129,13 @@ export const kycApi = {
 
 export type InvoiceStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
+export type LineItem = {
+  description: string;
+  quantity?: number;
+  amount_ttc?: number;
+  confidence: number;
+};
+
 export type Invoice = {
   id: string;
   status: InvoiceStatus;
@@ -145,6 +152,7 @@ export type Invoice = {
   ocrConfidence: number | null;
   needsReview: boolean | null;
   reviewReasons: string[] | null;
+  lineItems: LineItem[] | null;
   uploadedAt: string | null;
   createdAt: string;
 };

@@ -61,9 +61,12 @@ enum InviteCodeStatus {
 }
 
 enum InvoiceStatus {
-  PENDING    // Uploaded and awaiting admin decision (OCR runs in background)
-  APPROVED   // Cashback eligible
-  REJECTED   // Rejected — reseller notified
+  UPLOADED        // File received, queued for OCR
+  OCR_PROCESSING  // OCR job running
+  OCR_DONE        // OCR complete, awaiting admin review
+  PENDING         // Awaiting admin decision (legacy / fallback)
+  APPROVED        // Cashback eligible
+  REJECTED        // Rejected — reseller notified
 }
 
 enum InvoiceCurrency {

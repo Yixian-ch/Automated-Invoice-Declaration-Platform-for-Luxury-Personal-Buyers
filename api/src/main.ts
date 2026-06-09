@@ -7,6 +7,9 @@ import cookieParser from 'cookie-parser';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Increase body size limit to support base64-encoded image uploads in the OCR test endpoint
+  app.use(require('express').json({ limit: '10mb' }));
+
   // Security headers
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
