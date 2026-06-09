@@ -1,10 +1,10 @@
-import { Process, Processor } from '@nestjs/bull';
+import { Process, Processor, OnQueueFailed } from '@nestjs/bull';
 import type { Job } from 'bull';
 import { Logger } from '@nestjs/common';
 import {
   S3Client,
   GetObjectCommand,
-} from '@aws-sdk/client-s3';
+} from '@aws-sdk/client-s3'; // no need for AWS
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -36,103 +36,107 @@ export class OcrProcessor {
     });
   }
 
-  @Process('process-invoice')
-  async handleOcrJob(job: Job<OcrJobData>): Promise<void> {
-    const { invoiceId } = job.data;
-    this.logger.log(`Starting OCR for invoice ${invoiceId}`);
-    this.logger.log(`[DEBUG] bypassS3=${this.config.get('BYPASS_S3')} bypassOcr=${this.config.get('BYPASS_OCR')}`);
+@Process('process-invoice')
+async handleOcrJob(job: Job<OcrJobData>): Promise<void> {
+  const { invoiceId } = job.data;
+  this.logger.log(`Starting OCR for invoice ${invoiceId}`);
+  this.logger.log(`[DEBUG] bypassS3=${this.config.get('BYPASS_S3')} bypassOcr=${this.config.get('BYPASS_OCR')}`);
 
-    const bypassOcr =
-      this.config.get<string>('NODE_ENV') !== 'production' &&
-      this.config.get<string>('BYPASS_OCR') === 'true';
-
-    // Mark as processing
+  try {
+    // 1. ✅ 移入 try 块内，确保任何 DB 错误都能被捕获并打印
     await this.prisma.invoice.update({
       where: { id: invoiceId },
       data: { status: 'OCR_PROCESSING' },
     });
 
-    try {
-      // Fetch invoice record
-      const invoice = await this.prisma.invoice.findUniqueOrThrow({
-        where: { id: invoiceId },
-      });
+    const bypassOcr =
+      this.config.get<string>('NODE_ENV') !== 'production' &&
+      this.config.get<string>('BYPASS_OCR') === 'true';
 
-      let buffer: Buffer;
+    // Fetch invoice record
+    const invoice = await this.prisma.invoice.findUniqueOrThrow({
+      where: { id: invoiceId },
+    });
 
-      const bypassS3 = this.config.get<string>('BYPASS_S3') === 'true';
+    let buffer: Buffer;
+    const bypassS3 = this.config.get<string>('BYPASS_S3') === 'true';
 
-      if (bypassOcr) {
-        // Skip S3 download — OcrService will return mock data
-        this.logger.warn(`[DEV] BYPASS_OCR: skipping S3 download for invoice ${invoiceId}`);
-        buffer = Buffer.from('');
-      } else if (bypassS3) {
-        // BYPASS_S3=true, BYPASS_OCR=false: read from local uploads dir (written by dev-sink)
-        const localPath = path.resolve(process.cwd(), 'uploads', invoiceId);
-        this.logger.warn(`[DEV] BYPASS_S3: reading file from local path ${localPath}`);
-        this.logger.log(`[DEBUG] Looking for file at: ${localPath}`);
-        if (!fs.existsSync(localPath)) {
-          throw new Error(`[DEV] Local file not found for invoice ${invoiceId} at ${localPath}`);
-        }
-        buffer = fs.readFileSync(localPath);
-        this.logger.log(`[DEBUG] File read, size=${buffer.length}, calling OCR...`);
-      } else {
-        if (!invoice.s3Key || !invoice.s3Bucket) {
-          throw new Error(`Invoice ${invoiceId} has no S3 key`);
-        }
-        // Download from S3
-        const s3Response = await this.s3.send(
-          new GetObjectCommand({ Bucket: invoice.s3Bucket, Key: invoice.s3Key }),
-        );
-        const chunks: Uint8Array[] = [];
-        for await (const chunk of s3Response.Body as AsyncIterable<Uint8Array>) {
-          chunks.push(chunk);
-        }
-        buffer = Buffer.concat(chunks);
+    if (bypassOcr) {
+      this.logger.warn(`[DEV] BYPASS_OCR: skipping S3 download for invoice ${invoiceId}`);
+      buffer = Buffer.from('');
+    } else if (bypassS3) {
+      const localPath = path.resolve(process.cwd(), 'uploads', invoiceId);
+      this.logger.warn(`[DEV] BYPASS_S3: reading file from local path ${localPath}`);
+      if (!fs.existsSync(localPath)) {
+        throw new Error(`[DEV] Local file not found for invoice ${invoiceId} at ${localPath}`);
       }
-
-      // Run OCR
-      const result = await this.ocrService.processDocument(
-        buffer,
-        invoice.mimeType ?? 'application/pdf',
+      buffer = fs.readFileSync(localPath);
+    } else {
+      if (!invoice.s3Key || !invoice.s3Bucket) {
+        throw new Error(`Invoice ${invoiceId} has no S3 key`);
+      }
+      const s3Response = await this.s3.send(
+        new GetObjectCommand({ Bucket: invoice.s3Bucket, Key: invoice.s3Key }),
       );
-      await this.prisma.invoice.update({
-        where: { id: invoiceId },
-        data: {
-          status: 'OCR_DONE',
-          invoiceNumber: result.invoiceNumber,
-          purchaseDate: result.purchaseDate,
-          vendorName: result.vendorName,
-          vendorAddress: result.vendorAddress,
-          brandName: result.brandName,
-          itemDescription: result.itemDescription,
-          currency: this.mapCurrency(result.currency) as any,
-          subtotalAmount: result.subtotalAmount,
-          taxAmount: result.taxAmount,
-          grandTotalAmount: result.grandTotalAmount,
-          ocrConfidence: result.confidence,
-          ocrRawJson: result.rawJson as any,
-          ocrCompletedAt: new Date(),
-        },
-      });
-
-      this.logger.log(
-        `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}`,
-      );
-    } catch (err) {
-      this.logger.error(`OCR failed for invoice ${invoiceId}: ${String(err)}`);
-      if (err instanceof Error) this.logger.error(err.stack);
-
-      await this.prisma.invoice.update({
-        where: { id: invoiceId },
-        data: { status: 'UPLOADED' }, // reset so a retry can be triggered
-      });
-
-      // Re-throw so Bull marks the job as failed and retries
-      throw err;
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of s3Response.Body as AsyncIterable<Uint8Array>) {
+        chunks.push(chunk);
+      }
+      buffer = Buffer.concat(chunks);
     }
-  }
 
+    // Run OCR
+    const result = await this.ocrService.processDocument(
+      buffer,
+      invoice.mimeType ?? 'application/pdf',
+    );
+
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: 'OCR_DONE',
+        invoiceNumber: result.invoiceNumber,
+        purchaseDate: result.purchaseDate,
+        vendorName: result.vendorName,
+        vendorAddress: result.vendorAddress,
+        brandName: result.brandName,
+        itemDescription: result.itemDescription,
+        currency: this.mapCurrency(result.currency) as any,
+        subtotalAmount: result.subtotalAmount,
+        taxAmount: result.taxAmount,
+        grandTotalAmount: result.grandTotalAmount,
+        ocrConfidence: result.confidence,
+        ocrRawJson: result.rawJson as any,
+        ocrCompletedAt: new Date(),
+      },
+    });
+
+    this.logger.log(
+      `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}`,
+    );
+  } catch (err) {
+    // 2. ✅ 现在这里能精准捕捉到刚才那个导致无限重试的罪魁祸首了
+    this.logger.error(`OCR failed for invoice ${invoiceId}: ${String(err)}`);
+    if (err instanceof Error) this.logger.error(err.stack);
+
+    // 避免因为这里再次更新失败而冲掉原始错误日志
+    try {
+      await this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data: { status: 'UPLOADED' }, 
+      });
+    } catch (dbErr) {
+      this.logger.error(`Failed to reset invoice status to UPLOADED: ${String(dbErr)}`);
+    }
+
+    throw err;
+  }
+}
+  @OnQueueFailed()
+  onJobFailed(job: Job, error: Error) {
+    this.logger.error(`[BULL ERROR] Job ${job.id} failed: ${error.message}`);
+    this.logger.error(error.stack);
+  }
   private mapCurrency(raw?: string): string | null {
     if (!raw) return null;
     const upper = raw.toUpperCase().trim();
