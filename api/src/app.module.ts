@@ -23,12 +23,22 @@ import { AdminModule } from './admin/admin.module';
     // Redis connection for Bull queues
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        redis: {
-          host: config.get<string>('REDIS_HOST', 'localhost'),
-          port: config.get<number>('REDIS_PORT', 6379),
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>('REDIS_URL');
+        
+        // 🔥 如果 Railway 环境变量里配置了完整的 REDIS_URL，直接用它连接（包含密码和主机名）
+        if (redisUrl) {
+          return { url: redisUrl };
+        }
+        
+        // 💡 否则降级使用本地开发模式
+        return {
+          redis: {
+            host: config.get<string>('REDIS_HOST', 'localhost'),
+            port: config.get<number>('REDIS_PORT', 6379),
+          },
+        };
+      },
       inject: [ConfigService],
     }),
 
