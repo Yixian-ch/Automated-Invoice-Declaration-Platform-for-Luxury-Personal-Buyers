@@ -3,8 +3,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install deps first (layer cache)
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json ./
+RUN npm install
 
 # Copy source
 COPY . .
@@ -22,8 +22,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Only install production deps
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY package.json ./
+RUN npm install --omit=dev && npm cache clean --force
 
 # Copy compiled output + Prisma client
 COPY --from=builder /app/dist ./dist
