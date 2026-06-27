@@ -8,6 +8,7 @@ import { StorageModule } from '../storage/storage.module';
 import { OcrModule } from '../ocr/ocr.module';
 import { OcrProcessor } from '../ocr/ocr.processor';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CashbackModule } from '../cashback/cashback.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     PrismaModule,
     StorageModule,
     OcrModule,
+    CashbackModule,
     BullModule.registerQueueAsync({
       name: OCR_QUEUE,
       imports: [ConfigModule],

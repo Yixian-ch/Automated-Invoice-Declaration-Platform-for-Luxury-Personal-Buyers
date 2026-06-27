@@ -4,6 +4,8 @@ import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
 
 export interface OcrLineItem {
   description: string;
+  brand?: string | null;
+  itemCategory?: string | null;
   quantity?: number;
   amount_ttc?: number;
   confidence: number;
@@ -17,6 +19,7 @@ export interface OcrResult {
   purchaseDateConfidence: number;
   grandTotalAmount?: number;
   grandTotalAmountConfidence: number;
+  taxRefundAmount?: number;  // Montant de la détaxe (BVE receipts)
   // Non-core fields
   buyerName?: string;
   lineItems: OcrLineItem[];
@@ -71,12 +74,18 @@ export class OcrService {
 Analyze the provided receipt/invoice image and extract data matching the requested schema.
 You MUST output a single valid JSON object. Do not include markdown codeblocks, preambles, or postscript explanations.`;
 
-      const userPrompt = `Please extract the following structural data from this invoice:
+      const userPrompt = `Please extract the following structural data from this invoice or receipt:
 - merchantName (string, name of store e.g., CHANEL, LOUIS VUITTON, GALERIES LAFAYETTE)
 - purchaseDate (string format YYYY-MM-DD)
-- grandTotalAmount (float)
+- grandTotalAmount (float, the total amount including tax — "Montant total TTC")
+- taxRefundAmount (float or null — the duty-free refund amount labelled "Montant de la détaxe" or "Montant de remboursement" on BVE/détaxe receipts; null if not present)
 - buyerName (string, uppercase full name of the customer/tourist)
-- lineItems (array of objects containing: description, quantity, amount_ttc)
+- lineItems (array of objects, one entry per product line):
+    - description (string, the full product description as printed)
+    - brand (string or null — the luxury brand of this specific item, e.g. "CHANEL", "DIOR", "LOUIS VUITTON"; infer from description if not explicitly labelled; null if unknown)
+    - itemCategory (string or null — standardised product category; use one of: handbag, bag, shoes, watch, jewellery, clothing, perfume, cosmetics, accessories, luggage, sunglasses, other; null if unknown)
+    - quantity (integer)
+    - amount_ttc (float, the line total including tax)
 
 Perform mathematical self-validation: if the sum of lineItems' amount_ttc does not equal grandTotalAmount, set "arithmeticCheck" to "fail" and flag "needsReview" as true with detailed "reviewReasons".`;
 
@@ -143,9 +152,12 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       purchaseDateConfidence: raw.purchaseDate ? 0.94 : 0.0,
       grandTotalAmount: raw.grandTotalAmount ? parseFloat(raw.grandTotalAmount) : undefined,
       grandTotalAmountConfidence: raw.grandTotalAmount ? 0.96 : 0.0,
+      taxRefundAmount: raw.taxRefundAmount ? parseFloat(raw.taxRefundAmount) : undefined,
       buyerName: raw.buyerName || null,
       lineItems: (raw.lineItems || []).map((item: any) => ({
         description: item.description || 'Unknown Item',
+        brand: item.brand || null,
+        itemCategory: item.itemCategory || null,
         quantity: item.quantity ? parseInt(item.quantity, 10) : 1,
         amount_ttc: item.amount_ttc ? parseFloat(item.amount_ttc) : 0,
         confidence: 0.90,
@@ -159,6 +171,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         merchant_name: raw.merchantName,
         purchase_date: raw.purchaseDate,
         grand_total_amount: raw.grandTotalAmount,
+        tax_refund_amount: raw.taxRefundAmount,
         buyer_name: raw.buyerName,
         line_items: raw.lineItems,
         arithmetic_check: raw.arithmeticCheck,

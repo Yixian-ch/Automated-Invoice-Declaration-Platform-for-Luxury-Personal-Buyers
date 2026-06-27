@@ -235,6 +235,28 @@ export type AdminUser = {
   cashbackRate: string | null;
 };
 
+export type BrandCashbackRule = {
+  id: string;
+  displayLabel: string;
+  brands: string[];
+  rate: string;
+  condition: string | null;
+  sortOrder: number;
+};
+
+export type MerchantCashbackConfig = {
+  id: string;
+  merchantKey: string;
+  displayName: string;
+  matchKeywords: string[];
+  defaultRate: string;
+  notes: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  brandRules: BrandCashbackRule[];
+  updatedAt: string;
+};
+
 export const adminApi = {
   listInvoices: (token: string, params?: { status?: string; userId?: string; page?: number }) => {
     const qs = new URLSearchParams();
@@ -292,4 +314,29 @@ export const adminApi = {
 
   deleteInvoice: (token: string, invoiceId: string) =>
     request<void>(`/invoices/${invoiceId}`, { method: 'DELETE', token }),
+
+  getCashbackConfigs: (token: string) =>
+    request<MerchantCashbackConfig[]>('/admin/cashback-configs', { token }),
+
+  updateMerchantConfig: (
+    token: string,
+    merchantId: string,
+    data: { displayName?: string; matchKeywords?: string[]; defaultRate?: number; notes?: string },
+  ) =>
+    request<MerchantCashbackConfig>(`/admin/cashback-configs/${merchantId}`, {
+      method: 'PUT',
+      body: data,
+      token,
+    }),
+
+  replaceBrandRules: (
+    token: string,
+    merchantId: string,
+    rules: { displayLabel: string; brands: string[]; rate: number; condition?: string; sortOrder?: number }[],
+  ) =>
+    request<MerchantCashbackConfig>(`/admin/cashback-configs/${merchantId}/brand-rules`, {
+      method: 'PUT',
+      body: rules,
+      token,
+    }),
 };

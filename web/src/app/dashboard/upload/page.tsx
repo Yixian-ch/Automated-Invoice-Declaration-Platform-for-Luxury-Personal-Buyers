@@ -151,13 +151,6 @@ export default function UploadPage() {
     items.length > 0 &&
     items.every((i) => i.status === 'done' || i.status === 'error' || i.status === 'duplicate');
 
-  // Redirect only when everything succeeded (no errors)
-  useEffect(() => {
-    if (allSettled && doneCount > 0 && errorCount === 0) {
-      const t = setTimeout(() => router.push('/dashboard'), 2500);
-      return () => clearTimeout(t);
-    }
-  }, [allSettled, doneCount, errorCount, router]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
 

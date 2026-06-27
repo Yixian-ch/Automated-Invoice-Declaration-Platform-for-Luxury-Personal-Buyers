@@ -11,6 +11,7 @@ import * as path from 'path';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OcrService } from '../ocr/ocr.service.js';
+import { CashbackService } from '../cashback/cashback.service.js';
 import { OCR_QUEUE } from '../invoice/invoice.service.js';
 
 interface OcrJobData {
@@ -25,6 +26,7 @@ export class OcrProcessor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ocrService: OcrService,
+    private readonly cashbackService: CashbackService,
     private readonly config: ConfigService,
   ) {
     this.s3 = new S3Client({
@@ -91,6 +93,21 @@ async handleOcrJob(job: Job<OcrJobData>): Promise<void> {
       invoice.mimeType ?? 'application/pdf',
     );
 
+    // Calculate cashback from OCR-extracted data
+    const cashbackResult = result.grandTotalAmount
+      ? await this.cashbackService.calculate(
+          result.vendorName ?? null,
+          result.grandTotalAmount,
+          result.taxRefundAmount ?? null,
+          result.lineItems.map((li) => ({
+            description: li.description,
+            brand: li.brand ?? null,
+            itemCategory: li.itemCategory ?? null,
+            amount_ttc: li.amount_ttc ?? 0,
+          })),
+        )
+      : null;
+
     await this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
@@ -105,6 +122,10 @@ async handleOcrJob(job: Job<OcrJobData>): Promise<void> {
         subtotalAmount: result.subtotalAmount,
         taxAmount: result.taxAmount,
         grandTotalAmount: result.grandTotalAmount,
+        taxRefundAmount: result.taxRefundAmount ?? null,
+        lineItems: result.lineItems as any,
+        cashbackAmount: cashbackResult ? cashbackResult.totalCashback : undefined,
+        cashbackBreakdown: cashbackResult ? (cashbackResult.breakdown as any) : undefined,
         ocrConfidence: result.confidence,
         ocrRawJson: result.rawJson as any,
         ocrCompletedAt: new Date(),
@@ -112,7 +133,8 @@ async handleOcrJob(job: Job<OcrJobData>): Promise<void> {
     });
 
     this.logger.log(
-      `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}`,
+      `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}` +
+        (cashbackResult ? ` — cashback ${cashbackResult.totalCashback.toFixed(2)}€` : ''),
     );
   } catch (err) {
     // 2. ✅ 现在这里能精准捕捉到刚才那个导致无限重试的罪魁祸首了

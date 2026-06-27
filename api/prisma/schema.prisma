@@ -1,7 +1,3 @@
-// Prisma Schema — Luxury Invoice Declaration Platform
-// Phase 1: Auth, Users, Organizations, KYC/KYB, Invite Codes
-// Phase 2: Invoice upload, OCR, fraud scoring
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,20 +7,208 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────
+model Organization {
+  id                String       @id @default(uuid())
+  name              String
+  registrationNo    String?
+  country           String       @default("FR")
+  kybStatus         KybStatus    @default(NOT_STARTED)
+  cashbackRate      Decimal      @default(0) @db.Decimal(5, 4)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  deletedAt         DateTime?
+  diditKybSessionId String?
+  auditLogs         AuditLog[]
+  inviteCodes       InviteCode[]
+  invoices          Invoice[]
+  members           User[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                     String        @id @default(uuid())
+  email                  String        @unique
+  passwordHash           String
+  firstName              String
+  lastName               String
+  phone                  String?
+  locale                 String        @default("fr")
+  role                   UserRole      @default(RESELLER)
+  status                 UserStatus    @default(REGISTERED)
+  accountType            AccountType   @default(INDIVIDUAL)
+  kycStatus              KycStatus     @default(NOT_STARTED)
+  kycDocumentExpiresAt   DateTime?
+  kybStatus              KybStatus     @default(NOT_STARTED)
+  kybDocumentExpiresAt   DateTime?
+  cashbackRate           Decimal?      @db.Decimal(5, 4)
+  organizationId         String?
+  refreshTokenHash       String?
+  emailVerifiedAt        DateTime?
+  emailVerificationToken String?       @unique
+  passwordResetToken     String?       @unique
+  passwordResetExpiresAt DateTime?
+  mfaEnabled             Boolean       @default(false)
+  mfaSecret              String?
+  gdprConsentAt          DateTime?
+  marketingConsent       Boolean       @default(false)
+  lastLoginAt            DateTime?
+  lastLoginIp            String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  deletedAt              DateTime?
+  diditKybSessionId      String?
+  diditKycSessionId      String?
+  registeredViaInvite    Boolean       @default(false)
+  kycDocumentKey         String?
+  auditLogs              AuditLog[]
+  invoices               Invoice[]
+  organization           Organization? @relation(fields: [organizationId], references: [id])
+
+  @@map("users")
+}
+
+model InviteCode {
+  id              String           @id @default(uuid())
+  code            String           @unique
+  status          InviteCodeStatus @default(ACTIVE)
+  intendedRole    UserRole         @default(RESELLER)
+  intendedOrgId   String?
+  createdByUserId String
+  usedByUserId    String?
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime         @default(now())
+  organization    Organization?    @relation(fields: [intendedOrgId], references: [id])
+
+  @@map("invite_codes")
+}
+
+model Invoice {
+  id                String           @id @default(uuid())
+  userId            String
+  organizationId    String?
+  s3Key             String?
+  s3Bucket          String?
+  originalFilename  String?
+  mimeType          String?
+  fileSizeBytes     Int?
+  status            InvoiceStatus    @default(PENDING)
+  invoiceNumber     String?
+  purchaseDate      DateTime?
+  vendorName        String?
+  vendorAddress     String?
+  brandName         String?
+  storeLocation     String?
+  itemDescription   String?
+  itemCategory      String?
+  currency          InvoiceCurrency?
+  subtotalAmount    Decimal?         @db.Decimal(12, 2)
+  taxAmount         Decimal?         @db.Decimal(12, 2)
+  grandTotalAmount  Decimal?         @db.Decimal(12, 2)
+  cashbackAmount    Decimal?         @db.Decimal(12, 2)
+  ocrConfidence     Float?
+  ocrRawJson        Json?
+  fraudFlags        Json?
+  reviewNote        String?
+  uploadedAt        DateTime?
+  ocrCompletedAt    DateTime?
+  reviewedAt        DateTime?
+  reviewedById      String?
+  deletedAt         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  arithmeticCheck   String?
+  lineItems         Json?
+  needsReview       Boolean          @default(false)
+  reviewReasons     String[]
+  taxRefundAmount   Decimal?         @db.Decimal(12, 2)
+  cashbackBreakdown Json?
+  organization      Organization?    @relation(fields: [organizationId], references: [id])
+  user              User             @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([purchaseDate])
+  @@index([vendorName])
+  @@map("invoices")
+}
+
+model MerchantCashbackConfig {
+  id            String              @id @default(uuid())
+  merchantKey   String              @unique
+  displayName   String
+  matchKeywords String[]            @default([])
+  defaultRate   Decimal             @default(0) @db.Decimal(5, 4)
+  notes         String?
+  isActive      Boolean             @default(true)
+  sortOrder     Int                 @default(0)
+  updatedAt     DateTime            @updatedAt
+  createdAt     DateTime            @default(now())
+  brandRules    BrandCashbackRule[]
+
+  @@map("merchant_cashback_configs")
+}
+
+model BrandCashbackRule {
+  id           String                 @id @default(uuid())
+  merchantId   String
+  displayLabel String
+  brands       String[]               @default([])
+  rate         Decimal                @default(0) @db.Decimal(5, 4)
+  condition    String?
+  sortOrder    Int                    @default(0)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  merchant     MerchantCashbackConfig @relation(fields: [merchantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("brand_cashback_rules")
+}
+
+model MerchantBill {
+  id           String   @id @default(uuid())
+  merchantName String
+  date         DateTime @db.Date
+  totalAmount  Decimal  @db.Decimal(12, 2)
+  importedAt   DateTime @default(now())
+
+  @@unique([merchantName, date])
+  @@index([merchantName])
+  @@index([date])
+  @@map("merchant_bills")
+}
+
+model AuditLog {
+  id             String        @id @default(uuid())
+  actorId        String?
+  actorRole      String?
+  action         String
+  resourceType   String
+  resourceId     String?
+  meta           Json?
+  ipAddress      String?
+  userId         String?
+  organizationId String?
+  createdAt      DateTime      @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])
+
+  @@index([actorId])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
 
 enum UserRole {
-  ADMIN        // Internal platform admin
-  REVIEWER     // Internal human reviewer
-  ORG_ADMIN    // Organization account manager
-  RESELLER     // Individual reseller
+  ADMIN
+  REVIEWER
+  ORG_ADMIN
+  RESELLER
 }
 
 enum AccountType {
-  INDIVIDUAL   // Standalone reseller with own KYB
-  ORGANIZATION // Business entity; resellers link under it
+  INDIVIDUAL
+  ORGANIZATION
 }
 
 enum KycStatus {
@@ -32,7 +216,7 @@ enum KycStatus {
   PENDING
   APPROVED
   FAILED
-  EXPIRING    // Document expiring within 30 days
+  EXPIRING
   EXPIRED
 }
 
@@ -46,7 +230,7 @@ enum KybStatus {
 }
 
 enum UserStatus {
-  REGISTERED    // Email verified, KYC not yet started
+  REGISTERED
   KYC_PENDING
   ACTIVE
   SUSPENDED
@@ -61,12 +245,12 @@ enum InviteCodeStatus {
 }
 
 enum InvoiceStatus {
-  UPLOADED        // File received, queued for OCR
-  OCR_PROCESSING  // OCR job running
-  OCR_DONE        // OCR complete, awaiting admin review
-  PENDING         // Awaiting admin decision (legacy / fallback)
-  APPROVED        // Cashback eligible
-  REJECTED        // Rejected — reseller notified
+  PENDING
+  APPROVED
+  REJECTED
+  UPLOADED
+  OCR_PROCESSING
+  OCR_DONE
 }
 
 enum InvoiceCurrency {
@@ -76,230 +260,4 @@ enum InvoiceCurrency {
   CNY
   JPY
   CHF
-}
-
-// ─────────────────────────────────────────────
-// ORGANIZATION
-// An org has one KYB; its resellers each do KYC only
-// ─────────────────────────────────────────────
-
-model Organization {
-  id            String     @id @default(uuid())
-  name          String
-  registrationNo String?   // Business registration number
-  country       String     @default("FR")
-  kybStatus     KybStatus  @default(NOT_STARTED)
-  diditKybSessionId String? // Didit session ID for KYB
-
-  // Cashback configuration
-  cashbackRate  Decimal    @default(0) @db.Decimal(5, 4) // e.g. 0.0300 = 3%
-
-  members       User[]
-  invoices      Invoice[]
-  inviteCodes   InviteCode[]
-  auditLogs     AuditLog[]
-
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  deletedAt     DateTime?  // Soft delete for GDPR
-
-  @@map("organizations")
-}
-
-// ─────────────────────────────────────────────
-// USER
-// ─────────────────────────────────────────────
-
-model User {
-  id            String      @id @default(uuid())
-  email         String      @unique
-  passwordHash  String
-  firstName     String
-  lastName      String
-  phone         String?
-  locale        String      @default("fr") // fr | en | zh
-  role          UserRole    @default(RESELLER)
-  status        UserStatus  @default(REGISTERED)
-  accountType   AccountType @default(INDIVIDUAL)
-
-  // Registration path
-  registeredViaInvite Boolean @default(false)
-
-  // KYC (all users who are resellers)
-  kycStatus     KycStatus   @default(NOT_STARTED)
-  diditKycSessionId String?
-  kycDocumentExpiresAt DateTime?
-  kycDocumentKey String?
-
-  // KYB (only INDIVIDUAL resellers, not org-linked resellers)
-  kybStatus     KybStatus   @default(NOT_STARTED)
-  diditKybSessionId String?
-  kybDocumentExpiresAt DateTime?
-
-  // Cashback (for individuals not under an org)
-  cashbackRate  Decimal?    @db.Decimal(5, 4)
-
-  // Org link (nullable — only for ORG_ADMIN and org resellers)
-  organizationId String?
-  organization  Organization? @relation(fields: [organizationId], references: [id])
-
-  // Auth
-  refreshTokenHash String?
-  emailVerifiedAt  DateTime?
-  emailVerificationToken String? @unique
-  passwordResetToken     String? @unique
-  passwordResetExpiresAt DateTime?
-  mfaEnabled    Boolean   @default(false)
-  mfaSecret     String?   // encrypted TOTP secret
-
-  // GDPR
-  gdprConsentAt DateTime?
-  marketingConsent Boolean @default(false)
-
-  // Sessions & activity
-  lastLoginAt   DateTime?
-  lastLoginIp   String?
-
-  invoices      Invoice[]
-  auditLogs     AuditLog[]
-
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  deletedAt     DateTime?  // Soft delete — data kept per retention policy
-
-  @@map("users")
-}
-
-// ─────────────────────────────────────────────
-// INVITE CODE
-// Generated by admin or org admin; reseller self-registers with it
-// ─────────────────────────────────────────────
-
-model InviteCode {
-  id              String           @id @default(uuid())
-  code            String           @unique
-  status          InviteCodeStatus @default(ACTIVE)
-  intendedRole    UserRole         @default(RESELLER)
-  intendedOrgId   String?          // If set, new user is linked to this org
-  organization    Organization?    @relation(fields: [intendedOrgId], references: [id])
-  createdByUserId String           // Admin or org admin who generated it
-  usedByUserId    String?          // Filled when code is consumed
-  expiresAt       DateTime
-  usedAt          DateTime?
-
-  createdAt       DateTime         @default(now())
-
-  @@map("invite_codes")
-}
-
-// ─────────────────────────────────────────────
-// INVOICE — full Phase 2 model
-// ─────────────────────────────────────────────
-
-model Invoice {
-  id            String          @id @default(uuid())
-  userId        String
-  user          User            @relation(fields: [userId], references: [id])
-  organizationId String?
-  organization  Organization?   @relation(fields: [organizationId], references: [id])
-
-  // File storage
-  s3Key         String?         // Object key in S3 (e.g. invoices/{userId}/{uuid}.pdf)
-  s3Bucket      String?
-  originalFilename String?
-  mimeType      String?         // application/pdf | image/jpeg | image/png
-  fileSizeBytes Int?
-
-  // Status machine
-  status        InvoiceStatus   @default(PENDING)
-
-  // OCR-extracted fields (nullable until OCR completes)
-  invoiceNumber     String?
-  purchaseDate      DateTime?
-  vendorName        String?
-  vendorAddress     String?
-  brandName         String?     // e.g. "Chanel", "Louis Vuitton"
-  storeLocation     String?     // e.g. "Chanel Boutique Printemps Haussmann"
-  itemDescription   String?
-  itemCategory      String?     // e.g. "handbag", "watch", "jewellery"
-  currency          InvoiceCurrency?
-  subtotalAmount    Decimal?    @db.Decimal(12, 2)
-  taxAmount         Decimal?    @db.Decimal(12, 2)
-  grandTotalAmount  Decimal?    @db.Decimal(12, 2)
-  cashbackAmount    Decimal?    @db.Decimal(12, 2) // calculated after approval
-
-  // OCR confidence / quality
-  ocrConfidence     Float?      // 0.0 – 1.0 overall confidence from Document AI
-  ocrRawJson        Json?       // full Document AI response (retained for audit)
-
-  // BVE-specific validation fields
-  lineItems         Json?       // array of { description, quantity, amount_ttc, confidence }
-  arithmeticCheck   String?     // "pass" | "fail" — line items sum vs grand total
-  needsReview       Boolean     @default(false)
-  reviewReasons     String[]    // human-readable reasons for NEEDS_REVIEW status
-
-  // Fraud scoring
-  fraudFlags        Json?       // array of triggered rule names
-  reviewNote        String?     // reviewer's free-text note
-
-  // Timestamps
-  uploadedAt    DateTime?
-  ocrCompletedAt DateTime?
-  reviewedAt    DateTime?
-  reviewedById  String?
-
-  deletedAt     DateTime?       // GDPR soft delete
-
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-
-  @@index([userId])
-  @@index([status])
-  @@index([purchaseDate])
-  @@index([vendorName])
-  @@map("invoices")
-}
-
-// ─────────────────────────────────────────────
-// MERCHANT BILL — imported from department store official billing data
-// Used for reconciliation (Module C)
-// ─────────────────────────────────────────────
-
-model MerchantBill {
-  id           String   @id @default(uuid())
-  merchantName String               // e.g. "Galeries Lafayette", "Printemps"
-  date         DateTime @db.Date    // billing date (day-level granularity)
-  totalAmount  Decimal  @db.Decimal(12, 2) // official total billed for that day
-  importedAt   DateTime @default(now())
-
-  @@unique([merchantName, date])
-  @@index([merchantName])
-  @@index([date])
-  @@map("merchant_bills")
-}
-
-// ─────────────────────────────────────────────
-// AUDIT LOG — immutable event trail (GDPR Art.5(2))
-// ─────────────────────────────────────────────
-
-model AuditLog {
-  id             String   @id @default(uuid())
-  actorId        String?  // null = system
-  actorRole      String?
-  action         String   // e.g. "USER_LOGIN", "KYC_STATUS_CHANGED"
-  resourceType   String   // e.g. "User", "Invoice"
-  resourceId     String?
-  meta           Json?    // extra context, sanitized
-  ipAddress      String?  // anonymized after 30d via scheduled job
-  userId         String?
-  user           User?    @relation(fields: [userId], references: [id])
-  organizationId String?
-  organization   Organization? @relation(fields: [organizationId], references: [id])
-
-  createdAt      DateTime @default(now())
-
-  @@index([actorId])
-  @@index([resourceType, resourceId])
-  @@index([createdAt])
-  @@map("audit_logs")
 }

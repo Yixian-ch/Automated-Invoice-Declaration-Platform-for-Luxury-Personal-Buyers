@@ -15,7 +15,20 @@ import { AdminModule } from './admin/admin.module';
 @Module({
   imports: [
     // Config — available globally
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      // Priority (highest → lowest):
+      //   .env.development.local / .env.production.local  (personal, gitignored)
+      //   .env.development        / .env.production        (committed, env-specific)
+      //   .env.local                                       (personal, gitignored)
+      //   .env                                             (committed, shared defaults)
+      envFilePath: [
+        `.env.${process.env.NODE_ENV ?? 'production'}.local`,
+        `.env.${process.env.NODE_ENV ?? 'production'}`,
+        '.env.local',
+        '.env',
+      ],
+    }),
 
     // Rate limiting — 100 requests per minute per IP by default
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),

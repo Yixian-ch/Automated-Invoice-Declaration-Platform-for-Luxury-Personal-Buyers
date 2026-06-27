@@ -8,12 +8,18 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'Pending',
-  APPROVED: 'Approved',
-  REJECTED: 'Rejected',
+  UPLOADED: '上传成功',
+  OCR_PROCESSING: 'OCR 识别中',
+  OCR_DONE: '待审核',
+  PENDING: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已拒绝',
 };
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  UPLOADED: 'outline',
+  OCR_PROCESSING: 'outline',
+  OCR_DONE: 'outline',
   PENDING: 'outline',
   APPROVED: 'default',
   REJECTED: 'destructive',
@@ -201,10 +207,15 @@ export default function DashboardPage() {
                           ? `${inv.currency ?? ''} ${Number(inv.grandTotalAmount).toFixed(2)}`
                           : '—'}
                       </td>
-                      <td className="py-3 pr-4 text-right text-[#B8966E]">
-                        {inv.cashbackAmount
-                          ? `€${Number(inv.cashbackAmount).toFixed(2)}`
-                          : '—'}
+                      <td className="py-3 pr-4 text-right">
+                        {inv.cashbackAmount ? (
+                          <span className={inv.status === 'APPROVED' ? 'text-[#B8966E]' : 'text-stone-400'}>
+                            €{Number(inv.cashbackAmount).toFixed(2)}
+                            {inv.status !== 'APPROVED' && (
+                              <span className="text-[10px] ml-0.5">预估</span>
+                            )}
+                          </span>
+                        ) : '—'}
                       </td>
                       <td className="py-3 text-right">
                         <Badge variant={STATUS_VARIANT[inv.status] ?? 'outline'}>

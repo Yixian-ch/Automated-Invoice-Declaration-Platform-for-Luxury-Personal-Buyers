@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StorageService } from '../storage/storage.service.js';
+import { CashbackService } from '../cashback/cashback.service.js';
 import { InitiateUploadDto } from './dto/initiate-upload.dto.js';
 
 export const OCR_QUEUE = 'ocr';
@@ -25,6 +26,7 @@ export class InvoiceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly cashback: CashbackService,
     private readonly config: ConfigService,
     @InjectQueue(OCR_QUEUE) private readonly ocrQueue: Queue,
   ) {
@@ -192,36 +194,36 @@ export class InvoiceService {
   }
 
   /**
-   * Admin: manually approve an invoice and calculate cashback.
+   * Admin: manually approve an invoice and recalculate cashback.
    */
-  async approve(adminId: string, invoiceId: string, note?: string, recalculate = false) {
+  async approve(adminId: string, invoiceId: string, note?: string) {
     const invoice = await this.prisma.invoice.findUniqueOrThrow({
       where: { id: invoiceId },
-      include: { user: true },
     });
 
-    // Determine cashback rate: user-level override, then org-level, then 0
-    const rate =
-      invoice.user.cashbackRate ??
-      (invoice.user.organizationId
-        ? (
-            await this.prisma.organization.findUnique({
-              where: { id: invoice.user.organizationId },
-            })
-          )?.cashbackRate
-        : null) ??
-      0;
+    const lineItems = Array.isArray(invoice.lineItems) ? invoice.lineItems as any[] : [];
 
-    const cashbackAmount =
-      invoice.grandTotalAmount != null
-        ? Number(invoice.grandTotalAmount) * Number(rate)
+    const cashbackResult =
+      invoice.grandTotalAmount && invoice.vendorName
+        ? await this.cashback.calculate(
+            invoice.vendorName,
+            Number(invoice.grandTotalAmount),
+            invoice.taxRefundAmount != null ? Number(invoice.taxRefundAmount) : null,
+            lineItems.map((li: any) => ({
+              description: li.description,
+              brand: li.brand ?? null,
+              itemCategory: li.itemCategory ?? null,
+              amount_ttc: li.amount_ttc ?? 0,
+            })),
+          )
         : null;
 
     return this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         status: 'APPROVED',
-        cashbackAmount: cashbackAmount ?? undefined,
+        cashbackAmount: cashbackResult ? cashbackResult.totalCashback : undefined,
+        cashbackBreakdown: cashbackResult ? (cashbackResult.breakdown as any) : undefined,
         reviewedAt: new Date(),
         reviewedById: adminId,
         reviewNote: note ?? null,
