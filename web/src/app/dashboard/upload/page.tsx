@@ -34,7 +34,6 @@ export default function UploadPage() {
   const [uploadedFilenames, setUploadedFilenames] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load existing filenames for duplicate detection
   useEffect(() => {
     if (!accessToken) return;
     invoiceApi.list(accessToken, 1).then((res) => {
@@ -45,18 +44,15 @@ export default function UploadPage() {
     }).catch(() => {});
   }, [accessToken]);
 
-  // ─── File selection ────────────────────────────────────────────────────────
-
   const addFiles = useCallback((incoming: File[]) => {
-    // Validate outside setState so we can call toast
     const valid: File[] = [];
     for (const f of incoming) {
       if (!ACCEPTED_TYPES[f.type]) {
-        toast.error(`${f.name}: only PDF, JPEG or PNG are accepted.`);
+        toast.error(`${f.name}：仅支持 PDF、JPEG 或 PNG 格式。`);
         continue;
       }
       if (f.size > MAX_BYTES) {
-        toast.error(`${f.name}: file exceeds 10 MB limit.`);
+        toast.error(`${f.name}：文件超过 10 MB 限制。`);
         continue;
       }
       valid.push(f);
@@ -64,7 +60,6 @@ export default function UploadPage() {
     if (!valid.length) return;
 
     setItems((prev) => {
-      // Build a set of names already in the queue to catch within-batch duplicates
       const existingNames = new Set(prev.map((i) => i.file.name));
       const newItems: FileItem[] = [];
       for (const f of valid) {
@@ -88,7 +83,7 @@ export default function UploadPage() {
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length) addFiles(files);
-    e.target.value = ''; // allow re-selecting the same files
+    e.target.value = '';
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -97,8 +92,6 @@ export default function UploadPage() {
     const files = Array.from(e.dataTransfer.files);
     if (files.length) addFiles(files);
   };
-
-  // ─── Upload flow (sequential to keep memory low) ────────────────────────
 
   const updateItem = (id: string, patch: Partial<FileItem>) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
@@ -134,15 +127,13 @@ export default function UploadPage() {
       } catch (err) {
         updateItem(item.id, {
           status: 'error',
-          error: err instanceof Error ? err.message : 'Upload failed',
+          error: err instanceof Error ? err.message : '上传失败',
         });
       }
     }
 
     setRunning(false);
   };
-
-  // ─── Derived state ─────────────────────────────────────────────────────────
 
   const pendingCount = items.filter((i) => i.status === 'pending').length;
   const doneCount = items.filter((i) => i.status === 'done').length;
@@ -151,32 +142,29 @@ export default function UploadPage() {
     items.length > 0 &&
     items.every((i) => i.status === 'done' || i.status === 'error' || i.status === 'duplicate');
 
-
-  // ─── Render ────────────────────────────────────────────────────────────────
-
   return (
     <div className="min-h-screen bg-[#FAF9F7] flex flex-col">
-      {/* Header */}
+      {/* 顶部栏 */}
       <header className="border-b border-stone-200 bg-white px-6 py-4 flex items-center gap-4">
         <button
           onClick={() => router.push('/dashboard')}
           className="text-stone-500 hover:text-stone-800 text-sm"
         >
-          ← Back
+          ← 返回
         </button>
         <h1
           className="text-xl font-semibold text-stone-800"
           style={{ fontFamily: 'Cormorant Garamond, serif' }}
         >
-          Upload Invoices
+          上传小票
         </h1>
       </header>
 
-      {/* Content */}
+      {/* 内容区 */}
       <main className="flex-1 flex items-start justify-center p-8">
         <div className="w-full max-w-xl space-y-6">
 
-          {/* Drop zone — hidden while uploading */}
+          {/* 拖拽区域 */}
           {!running && (
             <div
               role="button"
@@ -205,18 +193,18 @@ export default function UploadPage() {
               />
               <div className="text-4xl mb-3">📄</div>
               <p className="font-medium text-stone-700">
-                Drag &amp; drop invoices here
+                拖拽小票至此处
               </p>
               <p className="text-sm text-stone-400 mt-1">
-                or click to browse — PDF, JPEG, PNG · max 10 MB each
+                或点击选择文件 — PDF、JPEG、PNG，每个最大 10 MB
               </p>
               <p className="text-xs text-[#B8966E] mt-2 font-medium">
-                Multiple files supported
+                支持多文件上传
               </p>
             </div>
           )}
 
-          {/* File list */}
+          {/* 文件列表 */}
           {items.length > 0 && (
             <div className="space-y-2">
               {items.map((item) => (
@@ -229,7 +217,7 @@ export default function UploadPage() {
             </div>
           )}
 
-          {/* Settlement banner */}
+          {/* 结果横幅 */}
           {allSettled && (
             <div
               className={`rounded-xl border px-6 py-5 text-center ${
@@ -244,18 +232,18 @@ export default function UploadPage() {
                   errorCount > 0 ? 'text-amber-800' : 'text-green-800'
                 }`}
               >
-                {doneCount} invoice{doneCount !== 1 ? 's' : ''} submitted successfully
-                {errorCount > 0 && `, ${errorCount} failed`}
+                {doneCount} 张小票上传成功
+                {errorCount > 0 && `，${errorCount} 张失败`}
               </p>
               {doneCount > 0 && errorCount === 0 && (
                 <p className="text-sm text-green-700 mt-1">
-                  Queued for OCR processing. Redirecting…
+                  已进入 OCR 识别队列。
                 </p>
               )}
             </div>
           )}
 
-          {/* CTA */}
+          {/* 上传按钮 */}
           <Button
             onClick={handleUpload}
             disabled={pendingCount === 0 || running}
@@ -263,16 +251,14 @@ export default function UploadPage() {
             style={{ backgroundColor: '#B8966E', color: 'white' }}
           >
             {running
-              ? 'Uploading…'
+              ? '上传中…'
               : pendingCount > 0
-                ? `Submit ${pendingCount} Invoice${pendingCount !== 1 ? 's' : ''}`
-                : 'Select files to upload'}
+                ? `提交 ${pendingCount} 张小票`
+                : '请先选择文件'}
           </Button>
 
           <p className="text-xs text-stone-400 text-center leading-relaxed">
-            Your invoices are stored securely in our EU data centre (AWS Paris).
-            OCR processing extracts key fields automatically; a reviewer may
-            follow up within 2 business days.
+            小票已安全存储于欧盟数据中心（AWS 巴黎区）。OCR 自动提取关键字段，审核员将在 2 个工作日内完成审核。
           </p>
         </div>
       </main>
@@ -280,7 +266,7 @@ export default function UploadPage() {
   );
 }
 
-// ─── File row ─────────────────────────────────────────────────────────────────
+// ─── 文件行 ───────────────────────────────────────────────────────────────────
 
 function FileRow({
   item,
@@ -290,11 +276,11 @@ function FileRow({
   onRemove?: () => void;
 }) {
   const label = {
-    pending: 'Ready',
+    pending: '待上传',
     uploading: `${item.progress}%`,
-    done: 'Done ✓',
-    error: item.error ?? 'Failed',
-    duplicate: 'Already uploaded',
+    done: '完成 ✓',
+    error: item.error ?? '上传失败',
+    duplicate: '已上传过',
   }[item.status];
 
   const labelColor = {
@@ -334,7 +320,7 @@ function FileRow({
           <button
             onClick={onRemove}
             className="text-stone-300 hover:text-stone-500 text-sm shrink-0 ml-1"
-            aria-label="Remove file"
+            aria-label="移除文件"
           >
             ✕
           </button>
@@ -352,7 +338,7 @@ function FileRow({
   );
 }
 
-// ─── S3 upload helper ─────────────────────────────────────────────────────────
+// ─── S3 上传工具函数 ──────────────────────────────────────────────────────────
 
 function uploadToS3(
   presignedUrl: string,
@@ -375,11 +361,11 @@ function uploadToS3(
         onProgress(100);
         resolve();
       } else {
-        reject(new Error(`S3 upload failed with status ${xhr.status}`));
+        reject(new Error(`上传失败，状态码 ${xhr.status}`));
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.onerror = () => reject(new Error('上传时网络错误'));
     xhr.send(file);
   });
 }

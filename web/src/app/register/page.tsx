@@ -17,19 +17,16 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
-    // Common fields
     email: '',
     password: '',
     confirmPassword: '',
     firstName: '',
     lastName: '',
     phone: '',
-    locale: 'fr',
-    // Path A — self-registration
+    locale: 'zh',
     accountType: 'INDIVIDUAL' as 'INDIVIDUAL' | 'ORGANIZATION',
     companyName: '',
     companyRegistrationNo: '',
-    // Path B — invite
     inviteCode: '',
   });
 
@@ -42,15 +39,15 @@ export default function RegisterPage() {
     setError('');
 
     if (form.password !== form.confirmPassword) {
-      setError('Passwords do not match');
+      setError('两次密码不一致');
       return;
     }
     if (form.password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setError('密码至少需要 8 个字符');
       return;
     }
     if (step === 'self' && form.accountType === 'ORGANIZATION' && !form.companyName.trim()) {
-      setError('Company name is required');
+      setError('请填写公司名称');
       return;
     }
 
@@ -83,23 +80,22 @@ export default function RegisterPage() {
             };
 
       await authApi.register(payload);
-      // Try auto-login so the user lands on dashboard without email verification
       try {
         await login(form.email, form.password);
         router.push('/dashboard');
         return;
       } catch {
-        // Bypass not active — fall through to success screen
+        // 邮箱验证未跳过时落到成功页
       }
       setStep('success');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      setError(err instanceof Error ? err.message : '注册失败');
     } finally {
       setLoading(false);
     }
   }
 
-  // ─── Success ─────────────────────────────────────────────────────────────────
+  // ─── 注册成功 ────────────────────────────────────────────────────────────────
   if (step === 'success') {
     return (
       <main className="flex min-h-screen items-center justify-center px-4">
@@ -108,20 +104,20 @@ export default function RegisterPage() {
             ✓
           </div>
           <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-            Registration Received
+            注册申请已收到
           </h1>
           <p className="text-sm text-muted leading-relaxed">
-            Please check your email to verify your account before signing in.
+            请查收验证邮件，邮箱验证后方可登录。
           </p>
           <Link href="/login" className="btn-primary inline-block">
-            Go to Sign In
+            前往登录
           </Link>
         </div>
       </main>
     );
   }
 
-  // ─── Choose path ─────────────────────────────────────────────────────────────
+  // ─── 选择注册方式 ──────────────────────────────────────────────────────────────
   if (step === 'choose') {
     return (
       <main className="flex min-h-screen items-center justify-center px-4 py-16">
@@ -131,13 +127,13 @@ export default function RegisterPage() {
               LIDP
             </Link>
             <h1 className="text-4xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-              Create Account
+              创建账户
             </h1>
             <div className="w-8 h-px bg-gold mx-auto" />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {/* Path A */}
+            {/* 自助注册 */}
             <button
               onClick={() => setStep('self')}
               className="card-luxury text-left space-y-3 hover:border-gold transition-colors group p-6"
@@ -146,14 +142,14 @@ export default function RegisterPage() {
                 ✦
               </div>
               <div>
-                <p className="text-sm font-medium tracking-wide">{"I'm a new reseller"}</p>
+                <p className="text-sm font-medium tracking-wide">我是新买手</p>
                 <p className="text-xs text-muted mt-1 leading-relaxed">
-                  Register your individual or company account. Submit documents for KYC&thinsp;/&thinsp;KYB approval.
+                  注册个人或企业账户，提交资料完成 KYC / KYB 审核。
                 </p>
               </div>
             </button>
 
-            {/* Path B */}
+            {/* 邀请码注册 */}
             <button
               onClick={() => setStep('invite')}
               className="card-luxury text-left space-y-3 hover:border-gold transition-colors group p-6"
@@ -162,18 +158,18 @@ export default function RegisterPage() {
                 ⬡
               </div>
               <div>
-                <p className="text-sm font-medium tracking-wide">I have an invite code</p>
+                <p className="text-sm font-medium tracking-wide">我有邀请码</p>
                 <p className="text-xs text-muted mt-1 leading-relaxed">
-                  Your company admin shared a code with you. Join your organisation now.
+                  您的公司管理员已共享邀请码，立即加入团队。
                 </p>
               </div>
             </button>
           </div>
 
           <p className="text-center text-sm text-muted">
-            Already have an account?{' '}
+            已有账户？{' '}
             <Link href="/login" className="text-ink underline underline-offset-4 hover:text-gold transition-colors">
-              Sign In
+              登录
             </Link>
           </p>
         </div>
@@ -181,13 +177,13 @@ export default function RegisterPage() {
     );
   }
 
-  // ─── Shared form fields ───────────────────────────────────────────────────────
+  // ─── 公共表单字段 ──────────────────────────────────────────────────────────────
   const commonFields = (
     <>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
           <label className="text-xs tracking-widest uppercase text-muted" htmlFor="firstName">
-            First Name
+            名
           </label>
           <input
             id="firstName"
@@ -200,7 +196,7 @@ export default function RegisterPage() {
         </div>
         <div className="space-y-1">
           <label className="text-xs tracking-widest uppercase text-muted" htmlFor="lastName">
-            Last Name
+            姓
           </label>
           <input
             id="lastName"
@@ -215,7 +211,7 @@ export default function RegisterPage() {
 
       <div className="space-y-1">
         <label className="text-xs tracking-widest uppercase text-muted" htmlFor="reg-email">
-          Email
+          邮箱
         </label>
         <input
           id="reg-email"
@@ -230,7 +226,7 @@ export default function RegisterPage() {
 
       <div className="space-y-1">
         <label className="text-xs tracking-widest uppercase text-muted" htmlFor="phone">
-          Phone <span className="normal-case text-muted">(optional)</span>
+          电话 <span className="normal-case text-muted">（选填）</span>
         </label>
         <input
           id="phone"
@@ -244,7 +240,7 @@ export default function RegisterPage() {
 
       <div className="space-y-1">
         <label className="text-xs tracking-widest uppercase text-muted" htmlFor="reg-password">
-          Password
+          密码
         </label>
         <input
           id="reg-password"
@@ -254,13 +250,13 @@ export default function RegisterPage() {
           value={form.password}
           onChange={(e) => set('password', e.target.value)}
           className="input-luxury"
-          placeholder="Min. 8 characters"
+          placeholder="至少 8 个字符"
         />
       </div>
 
       <div className="space-y-1">
         <label className="text-xs tracking-widest uppercase text-muted" htmlFor="confirm">
-          Confirm Password
+          确认密码
         </label>
         <input
           id="confirm"
@@ -276,7 +272,7 @@ export default function RegisterPage() {
 
       <div className="space-y-1">
         <label className="text-xs tracking-widest uppercase text-muted" htmlFor="locale">
-          Preferred Language
+          偏好语言
         </label>
         <select
           id="locale"
@@ -284,15 +280,15 @@ export default function RegisterPage() {
           onChange={(e) => set('locale', e.target.value)}
           className="input-luxury"
         >
+          <option value="zh">中文</option>
           <option value="fr">Français</option>
           <option value="en">English</option>
-          <option value="zh">中文</option>
         </select>
       </div>
     </>
   );
 
-  // ─── Path A — Self-registration form ─────────────────────────────────────────
+  // ─── 自助注册表单 ──────────────────────────────────────────────────────────────
   if (step === 'self') {
     return (
       <main className="flex min-h-screen items-center justify-center px-4 py-16">
@@ -302,7 +298,7 @@ export default function RegisterPage() {
               LIDP
             </Link>
             <h1 className="text-4xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-              New Reseller Account
+              新买手注册
             </h1>
             <div className="w-8 h-px bg-gold mx-auto" />
           </div>
@@ -312,9 +308,9 @@ export default function RegisterPage() {
               <p className="text-xs text-error border border-error/20 bg-error/5 px-4 py-3">{error}</p>
             )}
 
-            {/* Account type selector */}
+            {/* 账户类型 */}
             <div className="space-y-2">
-              <p className="text-xs tracking-widest uppercase text-muted">Account Type</p>
+              <p className="text-xs tracking-widest uppercase text-muted">账户类型</p>
               <div className="grid grid-cols-2 gap-3">
                 {(['INDIVIDUAL', 'ORGANIZATION'] as const).map((type) => (
                   <button
@@ -327,18 +323,18 @@ export default function RegisterPage() {
                         : 'border-border text-muted hover:border-ink'
                     }`}
                   >
-                    {type === 'INDIVIDUAL' ? 'Individual' : 'Company'}
+                    {type === 'INDIVIDUAL' ? '个人' : '企业'}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Company fields */}
+            {/* 企业字段 */}
             {form.accountType === 'ORGANIZATION' && (
               <>
                 <div className="space-y-1">
                   <label className="text-xs tracking-widest uppercase text-muted" htmlFor="companyName">
-                    Company Name
+                    公司名称
                   </label>
                   <input
                     id="companyName"
@@ -347,13 +343,13 @@ export default function RegisterPage() {
                     value={form.companyName}
                     onChange={(e) => set('companyName', e.target.value)}
                     className="input-luxury"
-                    placeholder="e.g. SARL Mon Entreprise"
+                    placeholder="如：SARL Mon Entreprise"
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs tracking-widest uppercase text-muted" htmlFor="regNo">
-                    Registration No.{' '}
-                    <span className="normal-case text-muted">(SIRET / RCS, optional)</span>
+                    工商注册号{' '}
+                    <span className="normal-case text-muted">（SIRET / RCS，选填）</span>
                   </label>
                   <input
                     id="regNo"
@@ -361,7 +357,7 @@ export default function RegisterPage() {
                     value={form.companyRegistrationNo}
                     onChange={(e) => set('companyRegistrationNo', e.target.value)}
                     className="input-luxury font-mono"
-                    placeholder="e.g. 123 456 789 00010"
+                    placeholder="如：123 456 789 00010"
                   />
                 </div>
               </>
@@ -372,26 +368,26 @@ export default function RegisterPage() {
             {commonFields}
 
             <p className="text-xs text-muted leading-relaxed">
-              By registering, you consent to the processing of your personal data in accordance with our{' '}
+              注册即表示您同意我们依据{' '}
               <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">
-                Privacy Policy
+                隐私政策
               </Link>{' '}
-              and GDPR. Identity documents are processed via Sumsub for KYC
-              {form.accountType === 'ORGANIZATION' ? '/KYB' : ''} and retained for 5 years per French AML law (CMF Art.&nbsp;L561-12).
+              及 GDPR 处理您的个人数据。身份文件将通过 Sumsub 进行 KYC
+              {form.accountType === 'ORGANIZATION' ? '/KYB' : ''} 认证，依据法国反洗钱法（CMF 第 L561-12 条）保留 5 年。
             </p>
 
             <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
-              {loading ? 'Creating account…' : 'Create Account'}
+              {loading ? '创建中…' : '创建账户'}
             </button>
           </form>
 
           <p className="text-center text-sm text-muted">
             <button onClick={() => setStep('choose')} className="underline underline-offset-4 hover:text-gold transition-colors">
-              ← Back
+              ← 返回
             </button>
             {' · '}
             <Link href="/login" className="text-ink underline underline-offset-4 hover:text-gold transition-colors">
-              Sign In
+              登录
             </Link>
           </p>
         </div>
@@ -399,7 +395,7 @@ export default function RegisterPage() {
     );
   }
 
-  // ─── Path B — Invite-code form ────────────────────────────────────────────────
+  // ─── 邀请码注册表单 ────────────────────────────────────────────────────────────
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-16">
       <div className="w-full max-w-md space-y-10">
@@ -408,7 +404,7 @@ export default function RegisterPage() {
             LIDP
           </Link>
           <h1 className="text-4xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-            Join Your Organisation
+            加入团队
           </h1>
           <div className="w-8 h-px bg-gold mx-auto" />
         </div>
@@ -420,7 +416,7 @@ export default function RegisterPage() {
 
           <div className="space-y-1">
             <label className="text-xs tracking-widest uppercase text-muted" htmlFor="invite">
-              Invite Code
+              邀请码
             </label>
             <input
               id="invite"
@@ -438,25 +434,25 @@ export default function RegisterPage() {
           {commonFields}
 
           <p className="text-xs text-muted leading-relaxed">
-            By registering, you consent to the processing of your personal data in accordance with our{' '}
+            注册即表示您同意我们依据{' '}
             <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">
-              Privacy Policy
+              隐私政策
             </Link>{' '}
-            and GDPR. Identity documents are processed via Sumsub for KYC and retained for 5 years per French AML law (CMF Art.&nbsp;L561-12).
+            及 GDPR 处理您的个人数据。身份文件将通过 Sumsub 进行 KYC 认证，依据法国反洗钱法（CMF 第 L561-12 条）保留 5 年。
           </p>
 
           <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
-            {loading ? 'Joining…' : 'Join Organisation'}
+            {loading ? '加入中…' : '加入团队'}
           </button>
         </form>
 
         <p className="text-center text-sm text-muted">
           <button onClick={() => setStep('choose')} className="underline underline-offset-4 hover:text-gold transition-colors">
-            ← Back
+            ← 返回
           </button>
           {' · '}
           <Link href="/login" className="text-ink underline underline-offset-4 hover:text-gold transition-colors">
-            Sign In
+            登录
           </Link>
         </p>
       </div>

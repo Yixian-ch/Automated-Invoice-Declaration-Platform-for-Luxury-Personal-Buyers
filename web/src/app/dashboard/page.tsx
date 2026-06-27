@@ -74,7 +74,7 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen flex flex-col">
-      {/* Nav */}
+      {/* 导航栏 */}
       <header className="border-b border-border px-8 py-4 flex items-center justify-between">
         <span className="text-sm tracking-[0.2em] uppercase" style={{ fontFamily: 'var(--font-serif)' }}>
           LIDP
@@ -84,25 +84,25 @@ export default function DashboardPage() {
             {user.firstName} {user.lastName}
           </span>
           <button onClick={logout} className="btn-ghost text-xs">
-            Sign out
+            退出
           </button>
         </nav>
       </header>
 
-      {/* Content */}
+      {/* 内容区 */}
       <div className="flex-1 px-8 py-12 max-w-5xl mx-auto w-full space-y-10">
 
-        {/* KYC status banner */}
+        {/* KYC 提示横幅 */}
         {!BYPASS_KYC && user.kycStatus !== 'APPROVED' && (
           <div className="border border-warning/30 bg-warning/5 px-6 py-4 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-warning">Identity Verification Required</p>
+              <p className="text-sm font-medium text-warning">需完成身份验证</p>
               <p className="text-xs text-muted mt-0.5">
-                Complete KYC verification to start uploading invoices.
+                请完成 KYC 认证后再上传小票。
               </p>
             </div>
             <a href="/onboarding" className="btn-primary text-xs px-4 py-2 whitespace-nowrap">
-              Verify Identity
+              立即认证
             </a>
           </div>
         )}
@@ -110,7 +110,7 @@ export default function DashboardPage() {
         <div className="flex items-end justify-between">
           <div>
             <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-              Dashboard
+              工作台
             </h1>
             <div className="w-8 h-px bg-gold mt-3" />
           </div>
@@ -119,18 +119,18 @@ export default function DashboardPage() {
               onClick={() => router.push('/dashboard/upload')}
               style={{ backgroundColor: '#B8966E', color: 'white' }}
             >
-              Upload Invoice
+              上传小票
             </Button>
           )}
         </div>
 
-        {/* Stat cards */}
+        {/* 统计卡片 */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: 'Invoices Submitted', value: total > 0 ? String(total) : '—' },
-            { label: 'Pending Review', value: pending > 0 ? String(pending) : '—' },
+            { label: '已提交小票', value: total > 0 ? String(total) : '—' },
+            { label: '待审核', value: pending > 0 ? String(pending) : '—' },
             {
-              label: 'Total Cashback',
+              label: '总返点',
               value: totalCashback > 0 ? `€${totalCashback.toFixed(2)}` : '—',
             },
           ].map((stat) => (
@@ -143,31 +143,31 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Invoice table */}
+        {/* 小票列表 */}
         <div className="card-luxury">
           <div className="flex items-center justify-between mb-6">
-            <p className="text-xs tracking-widest uppercase text-muted">Recent Invoices</p>
+            <p className="text-xs tracking-widest uppercase text-muted">最近小票</p>
             {invoices.length > 0 && (
               <button
                 onClick={loadInvoices}
                 className="text-xs text-[#B8966E] hover:underline"
               >
-                Refresh
+                刷新
               </button>
             )}
           </div>
 
           {invoicesLoading ? (
-            <div className="text-center py-10 text-muted text-sm">Loading…</div>
+            <div className="text-center py-10 text-muted text-sm">加载中…</div>
           ) : invoices.length === 0 ? (
             <div className="text-center py-12 space-y-3">
-              <p className="text-muted text-sm">No invoices yet.</p>
+              <p className="text-muted text-sm">暂无小票。</p>
               {(BYPASS_KYC || user.kycStatus === 'APPROVED') && (
                 <button
                   onClick={() => router.push('/dashboard/upload')}
                   className="text-sm text-[#B8966E] hover:underline"
                 >
-                  Upload your first invoice →
+                  上传第一张小票 →
                 </button>
               )}
             </div>
@@ -176,12 +176,12 @@ export default function DashboardPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-stone-100 text-xs text-muted uppercase tracking-wider">
-                    <th className="text-left pb-3 font-normal">Store</th>
-                    <th className="text-left pb-3 font-normal">Items</th>
-                    <th className="text-left pb-3 font-normal">Date</th>
-                    <th className="text-right pb-3 font-normal">Amount</th>
-                    <th className="text-right pb-3 font-normal">Cashback</th>
-                    <th className="text-right pb-3 font-normal">Status</th>
+                    <th className="text-left pb-3 font-normal">门店</th>
+                    <th className="text-left pb-3 font-normal">商品</th>
+                    <th className="text-left pb-3 font-normal">日期</th>
+                    <th className="text-right pb-3 font-normal">金额</th>
+                    <th className="text-right pb-3 font-normal">返点</th>
+                    <th className="text-right pb-3 font-normal">状态</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -199,7 +199,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="py-3 pr-4 text-stone-500 text-xs">
                         {inv.purchaseDate
-                          ? new Date(inv.purchaseDate).toLocaleDateString('fr-FR')
+                          ? new Date(inv.purchaseDate).toLocaleDateString('zh-CN')
                           : '—'}
                       </td>
                       <td className="py-3 pr-4 text-right text-stone-700">
@@ -233,4 +233,3 @@ export default function DashboardPage() {
     </main>
   );
 }
-

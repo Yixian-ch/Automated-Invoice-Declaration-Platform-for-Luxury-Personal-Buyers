@@ -12,7 +12,7 @@ type FieldMap = { merchantName: string; date: string; totalAmount: string };
 type UnifiedRow = {
   id: string;
   merchantName: string;
-  date: string;          // YYYY-MM-DD
+  date: string;
   billTotal: number;
   invoicesTotal: number;
   status: 'MATCH' | 'MISMATCH';
@@ -30,14 +30,12 @@ export default function AdminReconciliationPage() {
   const [showImport, setShowImport] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  // Excel upload state
   const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [fieldMap, setFieldMap] = useState<FieldMap>({ merchantName: '', date: '', totalAmount: '' });
   const [fileName, setFileName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Advanced (JSON) mode
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [importText, setImportText] = useState('');
 
@@ -58,8 +56,6 @@ export default function AdminReconciliationPage() {
 
   useEffect(() => { loadAll(); }, [accessToken]);
 
-  // Merge bills + reconciliation rows on the frontend so every bill appears,
-  // even when no approved invoices exist for that merchant/date.
   const unifiedRows = useMemo<UnifiedRow[]>(() => {
     const reconcMap = new Map<string, ReconciliationRow>();
     for (const row of reconcRows) {
@@ -68,13 +64,12 @@ export default function AdminReconciliationPage() {
 
     return bills
       .map((bill) => {
-        const dateStr = bill.date.slice(0, 10); // "2026-05-08T00:00:00.000Z" → "2026-05-08"
+        const dateStr = bill.date.slice(0, 10);
         const reconcRow = reconcMap.get(`${bill.merchantName}|${dateStr}`);
 
         const billTotal = Number(bill.totalAmount);
         const invoicesTotal = reconcRow ? Number(reconcRow.invoices_total) : 0;
 
-        // ±1% tolerance
         const isMatch =
           reconcRow !== undefined &&
           billTotal > 0 &&
@@ -91,7 +86,6 @@ export default function AdminReconciliationPage() {
         };
       })
       .sort((a, b) => {
-        // Mismatches first, then by date desc
         if (a.status !== b.status) return a.status === 'MISMATCH' ? -1 : 1;
         return b.date.localeCompare(a.date);
       });
@@ -106,7 +100,7 @@ export default function AdminReconciliationPage() {
       const data = await adminApi.getDrillDown(accessToken, row.merchantName, row.date);
       setDrillDown({ key, rows: data });
     } catch {
-      toast.error('Failed to load transactions');
+      toast.error('加载交易记录失败');
     } finally {
       setDrillLoading(false);
     }
@@ -134,19 +128,19 @@ export default function AdminReconciliationPage() {
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonRows: ParsedRow[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-        if (jsonRows.length === 0) { toast.error('File is empty or unreadable'); return; }
+        if (jsonRows.length === 0) { toast.error('文件为空或无法读取'); return; }
         const headers = Object.keys(jsonRows[0]);
         setParsedHeaders(headers);
         setParsedRows(jsonRows);
         const autoMatch = (candidates: string[]) =>
           headers.find((h) => candidates.some((c) => h.toLowerCase().includes(c))) ?? '';
         setFieldMap({
-          merchantName: autoMatch(['merchant', 'store', 'shop', 'vendor', 'retailer']),
-          date: autoMatch(['date', 'jour', 'datum', 'fecha']),
-          totalAmount: autoMatch(['total', 'amount', 'montant', 'price', 'sum']),
+          merchantName: autoMatch(['merchant', 'store', 'shop', 'vendor', 'retailer', '商家', '门店']),
+          date: autoMatch(['date', 'jour', 'datum', 'fecha', '日期']),
+          totalAmount: autoMatch(['total', 'amount', 'montant', 'price', 'sum', '金额', '总额']),
         });
       } catch {
-        toast.error('Failed to parse file');
+        toast.error('文件解析失败');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -174,14 +168,14 @@ export default function AdminReconciliationPage() {
         }))
         .filter((b) => b.merchantName && b.date && !isNaN(b.totalAmount));
 
-      if (payload.length === 0) { toast.error('No valid rows found after mapping'); return; }
+      if (payload.length === 0) { toast.error('映射后无有效数据行'); return; }
       const result = await adminApi.importMerchantBills(accessToken, payload);
-      toast.success(`Imported ${result.imported} bill(s)`);
+      toast.success(`成功导入 ${result.imported} 条账单`);
       resetFile();
       setShowImport(false);
       loadAll();
     } catch (e: any) {
-      toast.error(e.message ?? 'Import failed');
+      toast.error(e.message ?? '导入失败');
     } finally {
       setImporting(false);
     }
@@ -193,12 +187,12 @@ export default function AdminReconciliationPage() {
     try {
       const parsed = JSON.parse(importText);
       const result = await adminApi.importMerchantBills(accessToken, parsed);
-      toast.success(`Imported ${result.imported} bill(s)`);
+      toast.success(`成功导入 ${result.imported} 条账单`);
       setImportText('');
       setShowImport(false);
       loadAll();
     } catch (e: any) {
-      toast.error(e.message ?? 'Invalid JSON or import failed');
+      toast.error(e.message ?? 'JSON 格式有误或导入失败');
     } finally {
       setImporting(false);
     }
@@ -206,12 +200,12 @@ export default function AdminReconciliationPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-stone-800">Bill Check (Reconciliation)</h1>
+          <h1 className="text-xl font-semibold text-stone-800">账单核对</h1>
           <p className="text-sm text-stone-500 mt-1">
-            Compares submitted invoices against official merchant billing data.
+            将提交的小票与商家官方账单数据进行比对。
           </p>
         </div>
         <div className="flex gap-2">
@@ -219,24 +213,24 @@ export default function AdminReconciliationPage() {
             onClick={loadAll}
             className="px-3 py-1.5 text-sm border border-stone-200 rounded hover:bg-stone-50"
           >
-            Refresh
+            刷新
           </button>
           <button
             onClick={() => { setShowImport((v) => !v); resetFile(); }}
             className="px-3 py-1.5 text-sm bg-[#B8966E] text-white rounded hover:bg-[#a07d5a]"
           >
-            Import Bills
+            导入账单
           </button>
         </div>
       </div>
 
-      {/* Import panel */}
+      {/* 导入面板 */}
       {showImport && (
         <div className="bg-white border border-stone-200 rounded-lg p-5 space-y-4">
           {parsedHeaders.length === 0 ? (
             <div>
               <p className="text-sm font-medium text-stone-700 mb-3">
-                Upload a merchant bill file (.xlsx, .xls, .csv)
+                上传商家账单文件（.xlsx、.xls、.csv）
               </p>
               <div
                 onDrop={handleDrop}
@@ -246,7 +240,7 @@ export default function AdminReconciliationPage() {
               >
                 <div className="text-3xl mb-2">📂</div>
                 <p className="text-sm text-stone-500">
-                  Drag &amp; drop a file here, or <span className="text-[#B8966E] underline">browse</span>
+                  拖拽文件至此处，或<span className="text-[#B8966E] underline">点击浏览</span>
                 </p>
                 <p className="text-xs text-stone-400 mt-1">.xlsx · .xls · .csv</p>
                 <input
@@ -262,19 +256,19 @@ export default function AdminReconciliationPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-stone-700">
-                  Map columns — <span className="font-normal text-stone-500">{fileName}</span>
+                  字段映射 — <span className="font-normal text-stone-500">{fileName}</span>
                 </p>
                 <button onClick={resetFile} className="text-xs text-stone-400 hover:text-stone-600 underline">
-                  Change file
+                  重新选择
                 </button>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 {(['merchantName', 'date', 'totalAmount'] as const).map((field) => {
                   const labels: Record<string, string> = {
-                    merchantName: 'Merchant Name',
-                    date: 'Date',
-                    totalAmount: 'Total Amount',
+                    merchantName: '商家名称',
+                    date: '日期',
+                    totalAmount: '总金额',
                   };
                   return (
                     <div key={field}>
@@ -286,7 +280,7 @@ export default function AdminReconciliationPage() {
                         onChange={(e) => setFieldMap((prev) => ({ ...prev, [field]: e.target.value }))}
                         className="w-full border border-stone-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-[#B8966E]"
                       >
-                        <option value="">— select column —</option>
+                        <option value="">— 选择列 —</option>
                         {parsedHeaders.map((h) => (
                           <option key={h} value={h}>{h}</option>
                         ))}
@@ -298,14 +292,14 @@ export default function AdminReconciliationPage() {
 
               {mappingComplete && (
                 <div>
-                  <p className="text-xs text-stone-400 mb-2">Preview (first 5 rows)</p>
+                  <p className="text-xs text-stone-400 mb-2">预览（前 5 行）</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr className="border-b border-stone-100 text-stone-400">
-                          <th className="text-left py-1 pr-4">Merchant</th>
-                          <th className="text-left py-1 pr-4">Date</th>
-                          <th className="text-right py-1">Total</th>
+                          <th className="text-left py-1 pr-4">商家</th>
+                          <th className="text-left py-1 pr-4">日期</th>
+                          <th className="text-right py-1">总金额</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -319,7 +313,7 @@ export default function AdminReconciliationPage() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-xs text-stone-400 mt-1">{parsedRows.length} row(s) total</p>
+                  <p className="text-xs text-stone-400 mt-1">共 {parsedRows.length} 行</p>
                 </div>
               )}
 
@@ -328,19 +322,19 @@ export default function AdminReconciliationPage() {
                 disabled={importing || !mappingComplete}
                 className="px-4 py-2 bg-[#B8966E] text-white text-sm rounded hover:bg-[#a07d5a] disabled:opacity-50"
               >
-                {importing ? 'Importing…' : `Confirm & Import (${parsedRows.length} rows)`}
+                {importing ? '导入中…' : `确认导入（${parsedRows.length} 行）`}
               </button>
             </div>
           )}
 
-          {/* Advanced mode — JSON paste */}
+          {/* 高级模式 — JSON 粘贴 */}
           <div className="border-t border-stone-100 pt-3">
             <button
               onClick={() => setShowAdvanced((v) => !v)}
               className="text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1"
             >
               <span>{showAdvanced ? '▾' : '▸'}</span>
-              Advanced mode (paste JSON)
+              高级模式（粘贴 JSON）
             </button>
             {showAdvanced && (
               <div className="mt-3 space-y-2">
@@ -355,14 +349,14 @@ export default function AdminReconciliationPage() {
                   onChange={(e) => setImportText(e.target.value)}
                   rows={5}
                   className="w-full border border-stone-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-[#B8966E]"
-                  placeholder="Paste JSON here…"
+                  placeholder="在此粘贴 JSON…"
                 />
                 <button
                   onClick={handleJsonImport}
                   disabled={importing}
                   className="px-4 py-2 bg-[#B8966E] text-white text-sm rounded hover:bg-[#a07d5a] disabled:opacity-50"
                 >
-                  {importing ? 'Importing…' : 'Import JSON'}
+                  {importing ? '导入中…' : '导入 JSON'}
                 </button>
               </div>
             )}
@@ -370,23 +364,23 @@ export default function AdminReconciliationPage() {
         </div>
       )}
 
-      {/* Single reconciliation table — shows every imported bill */}
+      {/* 对账总表 */}
       <div className="bg-white border border-stone-200 rounded-lg overflow-x-auto">
         {loading ? (
-          <div className="p-6 text-sm text-stone-400">Loading…</div>
+          <div className="p-6 text-sm text-stone-400">加载中…</div>
         ) : unifiedRows.length === 0 ? (
           <div className="p-8 text-center text-stone-400 text-sm">
-            No merchant bills imported yet. Click "Import Bills" to get started.
+            尚未导入任何账单。点击"导入账单"开始。
           </div>
         ) : (
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-stone-200 bg-stone-50 text-xs text-stone-500 uppercase tracking-wider">
-                <th className="text-left px-4 py-3 font-medium">Merchant</th>
-                <th className="text-left px-4 py-3 font-medium">Date</th>
-                <th className="text-right px-4 py-3 font-medium">Invoices Total</th>
-                <th className="text-right px-4 py-3 font-medium">Bill Total</th>
-                <th className="text-center px-4 py-3 font-medium">Status</th>
+                <th className="text-left px-4 py-3 font-medium">商家</th>
+                <th className="text-left px-4 py-3 font-medium">日期</th>
+                <th className="text-right px-4 py-3 font-medium">小票合计</th>
+                <th className="text-right px-4 py-3 font-medium">账单总额</th>
+                <th className="text-center px-4 py-3 font-medium">状态</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -408,9 +402,9 @@ export default function AdminReconciliationPage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {isMismatch ? (
-                          <span className="text-red-600 font-medium">🔴 Mismatch</span>
+                          <span className="text-red-600 font-medium">🔴 不匹配</span>
                         ) : (
-                          <span className="text-green-600 font-medium">🟢 Match</span>
+                          <span className="text-green-600 font-medium">🟢 已匹配</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -419,7 +413,7 @@ export default function AdminReconciliationPage() {
                             onClick={() => handleDrillDown(row)}
                             className="text-xs text-[#B8966E] underline hover:no-underline"
                           >
-                            {isOpen ? 'Hide' : 'View Transactions'}
+                            {isOpen ? '收起' : '查看明细'}
                           </button>
                         )}
                       </td>
@@ -428,18 +422,18 @@ export default function AdminReconciliationPage() {
                       <tr key={`${key}-drill`} className="bg-red-50/60">
                         <td colSpan={6} className="px-4 py-3">
                           {drillLoading ? (
-                            <p className="text-sm text-stone-400">Loading…</p>
+                            <p className="text-sm text-stone-400">加载中…</p>
                           ) : drillDown?.rows.length === 0 ? (
-                            <p className="text-sm text-stone-400">No transactions found.</p>
+                            <p className="text-sm text-stone-400">暂无交易记录。</p>
                           ) : (
                             <table className="w-full text-xs border-collapse">
                               <thead>
                                 <tr className="border-b border-stone-200 text-stone-400">
-                                  <th className="text-left py-1 pr-4">Buyer</th>
-                                  <th className="text-left py-1 pr-4">Email</th>
-                                  <th className="text-left py-1 pr-4">File</th>
-                                  <th className="text-right py-1 pr-4">Amount</th>
-                                  <th className="text-right py-1">Cashback</th>
+                                  <th className="text-left py-1 pr-4">买手</th>
+                                  <th className="text-left py-1 pr-4">邮箱</th>
+                                  <th className="text-left py-1 pr-4">文件</th>
+                                  <th className="text-right py-1 pr-4">金额</th>
+                                  <th className="text-right py-1">返点</th>
                                 </tr>
                               </thead>
                               <tbody>

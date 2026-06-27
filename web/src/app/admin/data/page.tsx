@@ -8,6 +8,12 @@ import { toast } from 'sonner';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const ALL_STATUSES: InvoiceStatus[] = ['PENDING', 'APPROVED', 'REJECTED'];
 
+const STATUS_LABEL: Record<InvoiceStatus, string> = {
+  PENDING: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已拒绝',
+};
+
 export default function AdminDataPage() {
   const { accessToken } = useAuth();
   const [invoices, setInvoices] = useState<AdminInvoice[]>([]);
@@ -24,11 +30,11 @@ export default function AdminDataPage() {
     if (!window.confirm('确认删除这张小票？此操作不可撤销。')) return;
     try {
       await adminApi.deleteInvoice(accessToken, invoiceId);
-      toast.success('Invoice deleted');
+      toast.success('小票已删除');
       if (detail?.id === invoiceId) setDetail(null);
       load();
     } catch (e: any) {
-      toast.error(e.message ?? 'Failed to delete invoice');
+      toast.error(e.message ?? '删除小票失败');
     }
   };
 
@@ -44,7 +50,7 @@ export default function AdminDataPage() {
       setInvoices(res.items);
       setTotal(res.total);
     } catch {
-      toast.error('Failed to load data');
+      toast.error('加载数据失败');
     } finally {
       setLoading(false);
     }
@@ -59,52 +65,52 @@ export default function AdminDataPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-stone-800">Data Table</h1>
-      <p className="text-sm text-stone-500">Read-only view of all invoice records.</p>
+      <h1 className="text-xl font-semibold text-stone-800">数据总览</h1>
+      <p className="text-sm text-stone-500">所有小票记录的只读视图。</p>
 
-      {/* Filters */}
+      {/* 筛选器 */}
       <div className="flex gap-3 flex-wrap">
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
           className="border border-stone-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#B8966E]"
         >
-          <option value="">All statuses</option>
-          {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          <option value="">所有状态</option>
+          {ALL_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
         </select>
         <input
           type="text"
-          placeholder="Filter by buyer ID…"
+          placeholder="按买手 ID 筛选…"
           value={userIdFilter}
           onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }}
           className="border border-stone-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#B8966E] w-64"
         />
-        <span className="self-center text-xs text-stone-400">{total} records</span>
+        <span className="self-center text-xs text-stone-400">共 {total} 条</span>
       </div>
 
-      {/* Table */}
+      {/* 表格 */}
       <div className="bg-white border border-stone-200 rounded-lg overflow-x-auto">
         {loading ? (
-          <div className="p-6 text-sm text-stone-400">Loading…</div>
+          <div className="p-6 text-sm text-stone-400">加载中…</div>
         ) : (
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-stone-200 bg-stone-50 text-xs text-stone-500 uppercase tracking-wider">
                 <th className="text-left px-4 py-3 font-medium">ID</th>
-                <th className="text-left px-4 py-3 font-medium">Buyer</th>
-                <th className="text-left px-4 py-3 font-medium">Email</th>
-                <th className="text-left px-4 py-3 font-medium">Merchant</th>
-                <th className="text-left px-4 py-3 font-medium">Date</th>
-                <th className="text-right px-4 py-3 font-medium">Amount</th>
-                <th className="text-right px-4 py-3 font-medium">Cashback</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
+                <th className="text-left px-4 py-3 font-medium">买手</th>
+                <th className="text-left px-4 py-3 font-medium">邮箱</th>
+                <th className="text-left px-4 py-3 font-medium">门店</th>
+                <th className="text-left px-4 py-3 font-medium">日期</th>
+                <th className="text-right px-4 py-3 font-medium">金额</th>
+                <th className="text-right px-4 py-3 font-medium">返点</th>
+                <th className="text-left px-4 py-3 font-medium">状态</th>
                 <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-stone-400">No records</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-stone-400">暂无记录</td>
                 </tr>
               ) : (
                 invoices.map((inv) => (
@@ -118,7 +124,7 @@ export default function AdminDataPage() {
                     <td className="px-4 py-2.5 text-stone-500 text-xs">{inv.user.email}</td>
                     <td className="px-4 py-2.5 text-stone-600">{inv.vendorName ?? '—'}</td>
                     <td className="px-4 py-2.5 text-stone-500 text-xs">
-                      {inv.purchaseDate ? new Date(inv.purchaseDate).toLocaleDateString('fr-FR') : '—'}
+                      {inv.purchaseDate ? new Date(inv.purchaseDate).toLocaleDateString('zh-CN') : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-right text-stone-700">
                       {inv.grandTotalAmount ? `€${Number(inv.grandTotalAmount).toFixed(2)}` : '—'}
@@ -132,14 +138,14 @@ export default function AdminDataPage() {
                         inv.status === 'REJECTED' ? 'bg-red-50 text-red-700' :
                         'bg-stone-100 text-stone-600'
                       }`}>
-                        {inv.status}
+                        {STATUS_LABEL[inv.status] ?? inv.status}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => handleDelete(inv.id)}
                         className="text-stone-300 hover:text-red-500 transition-colors text-xs"
-                        title="Delete invoice"
+                        title="删除小票"
                       >
                         ✕
                       </button>
@@ -152,26 +158,26 @@ export default function AdminDataPage() {
         )}
       </div>
 
-      {/* Pagination */}
+      {/* 分页 */}
       <div className="flex gap-2 items-center">
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
           disabled={page === 1}
           className="px-3 py-1 text-sm border border-stone-200 rounded disabled:opacity-40"
         >
-          ← Prev
+          ← 上一页
         </button>
-        <span className="text-sm text-stone-500">Page {page}</span>
+        <span className="text-sm text-stone-500">第 {page} 页</span>
         <button
           onClick={() => setPage((p) => p + 1)}
           disabled={invoices.length < 50}
           className="px-3 py-1 text-sm border border-stone-200 rounded disabled:opacity-40"
         >
-          Next →
+          下一页 →
         </button>
       </div>
 
-      {/* Detail side panel */}
+      {/* 详情侧栏 */}
       {detail && (
         <div className="fixed inset-0 z-50 flex">
           <div
@@ -179,9 +185,9 @@ export default function AdminDataPage() {
             onClick={() => setDetail(null)}
           />
           <div className="w-[520px] bg-white shadow-2xl flex flex-col overflow-y-auto">
-            {/* Panel header */}
+            {/* 侧栏头部 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
-              <h2 className="text-base font-semibold text-stone-800">Invoice Detail</h2>
+              <h2 className="text-base font-semibold text-stone-800">小票详情</h2>
               <button
                 onClick={() => setDetail(null)}
                 className="text-stone-400 hover:text-stone-700 text-lg leading-none"
@@ -190,12 +196,12 @@ export default function AdminDataPage() {
               </button>
             </div>
 
-            {/* Receipt image */}
+            {/* 小票图片 */}
             <div className="bg-stone-50 border-b border-stone-100 flex items-center justify-center p-4 min-h-[240px]">
               {imgError ? (
                 <div className="text-center space-y-2 text-stone-400">
                   <p className="text-4xl">🧾</p>
-                  <p className="text-sm">Image not available</p>
+                  <p className="text-sm">图片不可用</p>
                   {detail.originalFilename && (
                     <p className="text-xs text-stone-400">{detail.originalFilename}</p>
                   )}
@@ -203,27 +209,27 @@ export default function AdminDataPage() {
               ) : (
                 <img
                   src={`${API_BASE}/api/v1/invoices/${detail.id}/image`}
-                  alt="Invoice"
+                  alt="小票"
                   onError={() => setImgError(true)}
                   className="max-h-[360px] max-w-full object-contain rounded shadow"
                 />
               )}
             </div>
 
-            {/* Extracted data */}
+            {/* 识别数据 */}
             <div className="px-6 py-4 space-y-4">
               <div>
-                <h3 className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Extracted Data</h3>
+                <h3 className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">识别数据</h3>
                 <table className="w-full text-sm">
                   <tbody>
                     {[
-                      ['Store', detail.vendorName ?? '—'],
-                      ['Date', detail.purchaseDate ? new Date(detail.purchaseDate).toLocaleDateString('fr-FR') : '—'],
-                      ['Amount', detail.grandTotalAmount ? `${detail.currency ?? '€'} ${Number(detail.grandTotalAmount).toFixed(2)}` : '—'],
-                      ['OCR Confidence', detail.ocrConfidence != null ? `${(detail.ocrConfidence * 100).toFixed(0)}%` : '—'],
-                      ['Buyer', `${detail.user.firstName} ${detail.user.lastName}`],
-                      ['Email', detail.user.email],
-                      ['Status', detail.status],
+                      ['门店', detail.vendorName ?? '—'],
+                      ['日期', detail.purchaseDate ? new Date(detail.purchaseDate).toLocaleDateString('zh-CN') : '—'],
+                      ['金额', detail.grandTotalAmount ? `${detail.currency ?? '€'} ${Number(detail.grandTotalAmount).toFixed(2)}` : '—'],
+                      ['OCR 置信度', detail.ocrConfidence != null ? `${(detail.ocrConfidence * 100).toFixed(0)}%` : '—'],
+                      ['买手', `${detail.user.firstName} ${detail.user.lastName}`],
+                      ['邮箱', detail.user.email],
+                      ['状态', STATUS_LABEL[detail.status] ?? detail.status],
                     ].map(([label, value]) => (
                       <tr key={label} className="border-b border-stone-50">
                         <td className="py-1.5 pr-4 text-stone-400 whitespace-nowrap text-xs">{label}</td>
@@ -247,16 +253,16 @@ export default function AdminDataPage() {
                 )}
               </div>
 
-              {/* Line items */}
+              {/* 行项目 */}
               {detail.lineItems && (detail.lineItems as LineItem[]).length > 0 && (
                 <div>
-                  <h3 className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">Line Items</h3>
+                  <h3 className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">行项目</h3>
                   <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-stone-200 text-stone-400 uppercase tracking-wider">
-                        <th className="text-left py-1.5 pr-3 font-medium">Description</th>
-                        <th className="text-right py-1.5 pr-3 font-medium">Quantité</th>
-                        <th className="text-right py-1.5 font-medium">Montant TTC</th>
+                        <th className="text-left py-1.5 pr-3 font-medium">商品描述</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">数量</th>
+                        <th className="text-right py-1.5 font-medium">含税金额</th>
                       </tr>
                     </thead>
                     <tbody>

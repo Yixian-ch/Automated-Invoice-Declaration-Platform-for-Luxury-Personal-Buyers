@@ -25,7 +25,7 @@ export default function LoginPage() {
         router.push('/dashboard');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign in failed');
+      setError(err instanceof Error ? err.message : '登录失败');
     } finally {
       setLoading(false);
     }
@@ -41,7 +41,7 @@ export default function LoginPage() {
             LIDP
           </Link>
           <h1 className="text-4xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-            Sign In
+            登录
           </h1>
           <div className="w-8 h-px bg-gold mx-auto" />
         </div>
@@ -56,7 +56,7 @@ export default function LoginPage() {
 
           <div className="space-y-1">
             <label className="text-xs tracking-widest uppercase text-muted" htmlFor="email">
-              Email
+              邮箱
             </label>
             <input
               id="email"
@@ -72,7 +72,7 @@ export default function LoginPage() {
 
           <div className="space-y-1">
             <label className="text-xs tracking-widest uppercase text-muted" htmlFor="password">
-              Password
+              密码
             </label>
             <input
               id="password"
@@ -87,15 +87,15 @@ export default function LoginPage() {
           </div>
 
           <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
-            {loading ? 'Signing in…' : 'Sign In'}
+            {loading ? '登录中…' : '登录'}
           </button>
         </form>
 
         {/* Footer */}
         <p className="text-center text-sm text-muted">
-          New to the platform?{' '}
+          还没有账户？{' '}
           <Link href="/register" className="text-ink underline underline-offset-4 hover:text-gold transition-colors">
-            Register with invite code
+            使用邀请码注册
           </Link>
         </p>
       </div>

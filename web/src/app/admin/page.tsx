@@ -34,7 +34,7 @@ export default function AdminReviewPage() {
         setSelected(refreshed ?? null);
       }
     } catch (e) {
-      toast.error('Failed to load invoices');
+      toast.error('加载小票失败');
     } finally {
       setLoading(false);
     }
@@ -61,12 +61,12 @@ export default function AdminReviewPage() {
     setActing(true);
     try {
       await adminApi.approve(accessToken, selected.id, note || undefined);
-      toast.success('Invoice approved');
+      toast.success('小票已通过');
       setSelected(null);
       setNote('');
       load();
     } catch (e: any) {
-      toast.error(e.message ?? 'Failed to approve');
+      toast.error(e.message ?? '审批失败');
     } finally {
       setActing(false);
     }
@@ -74,16 +74,16 @@ export default function AdminReviewPage() {
 
   const handleReject = async () => {
     if (!accessToken || !selected) return;
-    if (!note.trim()) { toast.error('A rejection reason is required'); return; }
+    if (!note.trim()) { toast.error('拒绝时必须填写原因'); return; }
     setActing(true);
     try {
       await adminApi.reject(accessToken, selected.id, note);
-      toast.success('Invoice rejected');
+      toast.success('小票已拒绝');
       setSelected(null);
       setNote('');
       load();
     } catch (e: any) {
-      toast.error(e.message ?? 'Failed to reject');
+      toast.error(e.message ?? '拒绝失败');
     } finally {
       setActing(false);
     }
@@ -94,11 +94,11 @@ export default function AdminReviewPage() {
     if (!window.confirm('确认删除这张小票？此操作不可撤销。')) return;
     try {
       await adminApi.deleteInvoice(accessToken, invoiceId);
-      toast.success('Invoice deleted');
+      toast.success('小票已删除');
       if (selected?.id === invoiceId) setSelected(null);
       load();
     } catch (e: any) {
-      toast.error(e.message ?? 'Failed to delete invoice');
+      toast.error(e.message ?? '删除小票失败');
     }
   };
 
@@ -111,11 +111,11 @@ export default function AdminReviewPage() {
         purchaseDate: correction.purchaseDate || undefined,
         grandTotalAmount: correction.grandTotalAmount || undefined,
       });
-      toast.success('Corrections saved');
+      toast.success('更正已保存');
       setCorrection(null);
       load();
     } catch (e: any) {
-      toast.error(e.message ?? 'Failed to save corrections');
+      toast.error(e.message ?? '保存更正失败');
     } finally {
       setCorrecting(false);
     }
@@ -123,16 +123,16 @@ export default function AdminReviewPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-stone-800">Invoice Review</h1>
-      <p className="text-sm text-stone-500">Manually approve or reject invoices pending review.</p>
+      <h1 className="text-xl font-semibold text-stone-800">小票审核</h1>
+      <p className="text-sm text-stone-500">手动审批或拒绝待审核的小票。</p>
 
       <div className="flex gap-6 h-[calc(100vh-160px)]">
-        {/* Left: invoice list */}
+        {/* 左侧：小票列表 */}
         <div className="w-72 shrink-0 bg-white border border-stone-200 rounded-lg overflow-y-auto">
           {loading ? (
-            <div className="p-4 text-sm text-stone-400">Loading…</div>
+            <div className="p-4 text-sm text-stone-400">加载中…</div>
           ) : invoices.length === 0 ? (
-            <div className="p-6 text-sm text-stone-400 text-center">No invoices pending review.</div>
+            <div className="p-6 text-sm text-stone-400 text-center">暂无待审核小票。</div>
           ) : (
             invoices.map((inv) => (
               <div key={inv.id} className="relative group border-b border-stone-100">
@@ -162,7 +162,7 @@ export default function AdminReviewPage() {
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDelete(inv.id); }}
                   className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-stone-300 hover:text-red-500 text-xs px-1"
-                  title="Delete invoice"
+                  title="删除小票"
                 >
                   ✕
                 </button>
@@ -171,15 +171,15 @@ export default function AdminReviewPage() {
           )}
         </div>
 
-        {/* Right: detail view */}
+        {/* 右侧：详情视图 */}
         {selected ? (
           <div className="flex-1 bg-white border border-stone-200 rounded-lg flex gap-0 overflow-hidden">
-            {/* Invoice image */}
+            {/* 小票图片 */}
             <div className="w-1/2 border-r border-stone-100 bg-stone-50 flex items-center justify-center p-4 overflow-auto">
               {imgError ? (
                 <div className="text-center space-y-2 text-stone-400">
                   <p className="text-4xl">🧾</p>
-                  <p className="text-sm">Image not available</p>
+                  <p className="text-sm">图片不可用</p>
                   {selected.originalFilename && (
                     <p className="text-xs text-stone-400">{selected.originalFilename}</p>
                   )}
@@ -187,27 +187,27 @@ export default function AdminReviewPage() {
               ) : (
                 <img
                   src={`${API_BASE}/api/v1/invoices/${selected.id}/image`}
-                  alt="Invoice"
+                  alt="小票"
                   className="max-w-full max-h-full object-contain rounded shadow"
                   onError={() => setImgError(true)}
                 />
               )}
             </div>
 
-            {/* Extracted data + actions */}
+            {/* 识别数据 + 操作 */}
             <div className="w-1/2 p-6 flex flex-col gap-4 overflow-y-auto">
               <div>
-                <h2 className="text-base font-semibold text-stone-800 mb-3">Extracted Data</h2>
+                <h2 className="text-base font-semibold text-stone-800 mb-3">识别数据</h2>
                 <table className="w-full text-sm">
                   <tbody>
                     {[
-                      ['Merchant', selected.vendorName ?? '—'],
-                      ['Date', selected.purchaseDate ? new Date(selected.purchaseDate).toLocaleDateString('fr-FR') : '—'],
-                      ['Amount', selected.grandTotalAmount ? `${selected.currency ?? ''} ${Number(selected.grandTotalAmount).toFixed(2)}` : '—'],
-                      ['OCR Confidence', selected.ocrConfidence != null ? `${(selected.ocrConfidence * 100).toFixed(0)}%` : '—'],
-                      ['Buyer', `${selected.user.firstName} ${selected.user.lastName}`],
-                      ['Email', selected.user.email],
-                      ['Status', selected.status],
+                      ['门店', selected.vendorName ?? '—'],
+                      ['日期', selected.purchaseDate ? new Date(selected.purchaseDate).toLocaleDateString('zh-CN') : '—'],
+                      ['金额', selected.grandTotalAmount ? `${selected.currency ?? ''} ${Number(selected.grandTotalAmount).toFixed(2)}` : '—'],
+                      ['OCR 置信度', selected.ocrConfidence != null ? `${(selected.ocrConfidence * 100).toFixed(0)}%` : '—'],
+                      ['买手', `${selected.user.firstName} ${selected.user.lastName}`],
+                      ['邮箱', selected.user.email],
+                      ['状态', selected.status],
                     ].map(([label, value]) => (
                       <tr key={label} className="border-b border-stone-50">
                         <td className="py-1.5 pr-4 text-stone-400 whitespace-nowrap">{label}</td>
@@ -232,13 +232,13 @@ export default function AdminReviewPage() {
 
                 {selected.lineItems && (selected.lineItems as LineItem[]).length > 0 && (
                   <div className="mt-4">
-                    <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">Line Items</h3>
+                    <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">行项目</h3>
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr className="border-b border-stone-200 text-stone-400 uppercase tracking-wider">
-                          <th className="text-left py-1.5 pr-3 font-medium">Description</th>
-                          <th className="text-right py-1.5 pr-3 font-medium">Quantité</th>
-                          <th className="text-right py-1.5 font-medium">Montant TTC</th>
+                          <th className="text-left py-1.5 pr-3 font-medium">商品描述</th>
+                          <th className="text-right py-1.5 pr-3 font-medium">数量</th>
+                          <th className="text-right py-1.5 font-medium">含税金额</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -315,14 +315,14 @@ export default function AdminReviewPage() {
 
               <div>
                 <label className="block text-xs text-stone-500 mb-1">
-                  Note <span className="text-red-400">(required for rejection)</span>
+                  备注 <span className="text-red-400">（拒绝时必填）</span>
                 </label>
                 <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
                   className="w-full border border-stone-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#B8966E]"
-                  placeholder="Optional approval note or rejection reason…"
+                  placeholder="填写通过备注或拒绝原因…"
                 />
               </div>
 
@@ -332,21 +332,21 @@ export default function AdminReviewPage() {
                   disabled={acting}
                   className="flex-1 py-2 rounded bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
                 >
-                  ✓ Approve
+                  ✓ 通过
                 </button>
                 <button
                   onClick={handleReject}
                   disabled={acting}
                   className="flex-1 py-2 rounded bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
                 >
-                  ✗ Reject
+                  ✗ 拒绝
                 </button>
               </div>
             </div>
           </div>
         ) : (
           <div className="flex-1 bg-white border border-stone-200 rounded-lg flex items-center justify-center text-stone-400 text-sm">
-            Select an invoice to review
+            请从左侧选择一张小票
           </div>
         )}
       </div>

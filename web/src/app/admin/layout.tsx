@@ -6,10 +6,10 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 
 const NAV = [
-  { href: '/admin', label: 'Invoice Review' },
-  { href: '/admin/data', label: 'Data Table' },
-  { href: '/admin/reconciliation', label: 'Bill Check' },
-  { href: '/admin/cashback-rates', label: 'Cashback Rates' },
+  { href: '/admin', label: '小票审核' },
+  { href: '/admin/data', label: '数据总览' },
+  { href: '/admin/reconciliation', label: '账单核对' },
+  { href: '/admin/cashback-rates', label: '返点管理' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -30,7 +30,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Sidebar */}
       <aside className="w-52 shrink-0 bg-white border-r border-stone-200 flex flex-col">
         <div className="px-5 py-5 border-b border-stone-100">
-          <p className="text-xs tracking-[0.2em] uppercase text-stone-400">LIDP Admin</p>
+          <p className="text-xs tracking-[0.2em] uppercase text-stone-400">LIDP 管理后台</p>
         </div>
         <nav className="flex-1 py-4 space-y-0.5">
           {NAV.map((item) => {

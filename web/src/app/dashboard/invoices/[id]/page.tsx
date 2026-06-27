@@ -9,9 +9,9 @@ import { Badge } from '@/components/ui/badge';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
-  PENDING: 'Pending',
-  APPROVED: 'Approved',
-  REJECTED: 'Rejected',
+  PENDING: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已拒绝',
 };
 
 const STATUS_VARIANT: Record<InvoiceStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -47,7 +47,7 @@ export default function InvoiceDetailPage() {
       setError(null);
       return data;
     } catch (e: any) {
-      setError(e.message ?? 'Failed to load invoice');
+      setError(e.message ?? '加载小票失败');
     } finally {
       setLoading(false);
     }
@@ -76,9 +76,9 @@ export default function InvoiceDetailPage() {
         <Header />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
-            <p className="text-muted text-sm">{error ?? 'Invoice not found'}</p>
+            <p className="text-muted text-sm">{error ?? '找不到此小票'}</p>
             <button onClick={() => router.push('/dashboard')} className="btn-ghost text-sm">
-              ← Back to Dashboard
+              ← 返回工作台
             </button>
           </div>
         </div>
@@ -99,31 +99,31 @@ export default function InvoiceDetailPage() {
       <Header />
 
       <div className="flex-1 px-8 py-10 max-w-5xl mx-auto w-full">
-        {/* Back link */}
+        {/* 返回链接 */}
         <button
           onClick={() => router.push('/dashboard')}
           className="btn-ghost text-xs mb-8 flex items-center gap-1"
         >
-          ← Back to Dashboard
+          ← 返回工作台
         </button>
 
-        {/* Page title */}
+        {/* 页面标题 */}
         <div className="mb-8">
           <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-            Invoice Detail
+            小票详情
           </h1>
           <div className="w-8 h-px bg-gold mt-3" />
         </div>
 
-        {/* Two-column layout */}
+        {/* 两列布局 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-          {/* Left — receipt image */}
+          {/* 左侧 — 小票图片 */}
           <div className="card-luxury flex flex-col items-center justify-center min-h-[400px]">
             {imgError ? (
               <div className="text-center space-y-2 text-muted">
                 <p className="text-4xl">🧾</p>
-                <p className="text-sm">Image not available</p>
+                <p className="text-sm">图片不可用</p>
                 {invoice.originalFilename && (
                   <p className="text-xs text-stone-400">{invoice.originalFilename}</p>
                 )}
@@ -131,30 +131,30 @@ export default function InvoiceDetailPage() {
             ) : (
               <img
                 src={imageUrl}
-                alt={invoice.originalFilename ?? 'Invoice'}
+                alt={invoice.originalFilename ?? '小票'}
                 onError={() => setImgError(true)}
                 className="max-w-full max-h-[600px] object-contain rounded"
               />
             )}
           </div>
 
-          {/* Right — OCR results */}
+          {/* 右侧 — OCR 结果 */}
           <div className="card-luxury">
             <div>
               <div className="flex items-center justify-between mb-4">
-                <p className="text-xs tracking-widest uppercase text-muted">OCR Results</p>
+                <p className="text-xs tracking-widest uppercase text-muted">OCR 识别结果</p>
                 <Badge variant={STATUS_VARIANT[invoice.status]}>
                   {STATUS_LABEL[invoice.status]}
                 </Badge>
               </div>
 
               <div className="divide-y divide-stone-100">
-                <Field label="Store" value={invoice.vendorName} />
+                <Field label="门店" value={invoice.vendorName} />
                 <Field
-                  label="Purchase Date"
+                  label="购买日期"
                   value={
                     invoice.purchaseDate
-                      ? new Date(invoice.purchaseDate).toLocaleDateString('fr-FR', {
+                      ? new Date(invoice.purchaseDate).toLocaleDateString('zh-CN', {
                           day: '2-digit',
                           month: 'long',
                           year: 'numeric',
@@ -163,7 +163,7 @@ export default function InvoiceDetailPage() {
                   }
                 />
                 <Field
-                  label="Amount"
+                  label="金额"
                   value={
                     invoice.grandTotalAmount
                       ? `${invoice.currency ?? '€'} ${Number(invoice.grandTotalAmount).toFixed(2)}`
@@ -171,7 +171,7 @@ export default function InvoiceDetailPage() {
                   }
                 />
                 <Field
-                  label="OCR Confidence"
+                  label="OCR 置信度"
                   value={
                     confidence ? (
                       <span className={Number(invoice.ocrConfidence) >= 0.8 ? 'text-green-700' : 'text-amber-600'}>
@@ -182,7 +182,7 @@ export default function InvoiceDetailPage() {
                 />
                 {isApproved && (
                   <div className="py-3">
-                    <p className="text-xs tracking-widest uppercase text-muted mb-0.5">Cashback</p>
+                    <p className="text-xs tracking-widest uppercase text-muted mb-0.5">返点</p>
                     <p className="text-xl font-light text-gold" style={{ fontFamily: 'var(--font-serif)' }}>
                       {invoice.cashbackAmount
                         ? `€${Number(invoice.cashbackAmount).toFixed(2)}`
@@ -194,13 +194,13 @@ export default function InvoiceDetailPage() {
 
               <div className="mt-6 pt-4 border-t border-stone-100">
                 <p className="text-xs text-stone-400">
-                  Uploaded{' '}
+                  上传时间{' '}
                   {invoice.uploadedAt
-                    ? new Date(invoice.uploadedAt).toLocaleString('fr-FR', {
+                    ? new Date(invoice.uploadedAt).toLocaleString('zh-CN', {
                         dateStyle: 'medium',
                         timeStyle: 'short',
                       })
-                    : new Date(invoice.createdAt).toLocaleString('fr-FR', {
+                    : new Date(invoice.createdAt).toLocaleString('zh-CN', {
                         dateStyle: 'medium',
                         timeStyle: 'short',
                       })}
@@ -210,17 +210,17 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
 
-        {/* Line items table */}
+        {/* 行项目表格 */}
         {invoice.lineItems && invoice.lineItems.length > 0 && (
           <div className="card-luxury mt-8">
-            <p className="text-xs tracking-widest uppercase text-muted mb-4">Line Items</p>
+            <p className="text-xs tracking-widest uppercase text-muted mb-4">行项目</p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-stone-200 text-xs text-stone-400 uppercase tracking-wider">
-                    <th className="text-left py-2 pr-4 font-medium">Description</th>
-                    <th className="text-right py-2 pr-4 font-medium">Quantité</th>
-                    <th className="text-right py-2 font-medium">Montant TTC</th>
+                    <th className="text-left py-2 pr-4 font-medium">商品描述</th>
+                    <th className="text-right py-2 pr-4 font-medium">数量</th>
+                    <th className="text-right py-2 font-medium">含税金额</th>
                   </tr>
                 </thead>
                 <tbody>

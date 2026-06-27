@@ -21,8 +21,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "LIDP — Luxury Invoice Declaration Platform",
-  description: "Secure invoice declaration for professional luxury resellers",
+  title: "LIDP — 奢侈品买手报税平台",
+  description: "专业买手的安全小票申报与返点管理平台",
 };
 
 export default function RootLayout({
@@ -31,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" className={cn("h-full", cormorant.variable, inter.variable, "font-sans", geist.variable)}>
+    <html lang="zh" className={cn("h-full", cormorant.variable, inter.variable, "font-sans", geist.variable)}>
       <body className="min-h-full bg-surface text-ink font-sans antialiased">
         <AuthProvider>{children}</AuthProvider>
         <Toaster richColors position="top-center" />

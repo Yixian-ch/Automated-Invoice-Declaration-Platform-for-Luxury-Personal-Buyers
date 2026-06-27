@@ -19,7 +19,7 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (!token) {
       setStatus('error');
-      setMessage('No verification token found in the link.');
+      setMessage('链接中未找到验证令牌。');
       return;
     }
 
@@ -28,7 +28,7 @@ export default function VerifyEmailPage() {
       .then(() => setStatus('success'))
       .catch((err: unknown) => {
         setStatus('error');
-        setMessage(err instanceof Error ? err.message : 'Verification failed. The link may have expired.');
+        setMessage(err instanceof Error ? err.message : '验证失败，链接可能已过期。');
       });
   }, [token]);
 
@@ -41,9 +41,9 @@ export default function VerifyEmailPage() {
               <div className="w-4 h-4 bg-gold/60" />
             </div>
             <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-              Verifying…
+              验证中…
             </h1>
-            <p className="text-sm text-muted">Please wait while we confirm your email address.</p>
+            <p className="text-sm text-muted">请稍候，正在确认您的邮箱地址。</p>
           </>
         )}
 
@@ -53,13 +53,13 @@ export default function VerifyEmailPage() {
               ✓
             </div>
             <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-              Email Verified
+              邮箱已验证
             </h1>
             <p className="text-sm text-muted leading-relaxed">
-              Your account is now active. You may sign in and complete your KYC verification.
+              您的账户已激活，现在可以登录并完成 KYC 认证。
             </p>
             <Link href="/login" className="btn-primary inline-block">
-              Sign In
+              前往登录
             </Link>
           </>
         )}
@@ -70,13 +70,13 @@ export default function VerifyEmailPage() {
               ✕
             </div>
             <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-              Verification Failed
+              验证失败
             </h1>
             <p className="text-sm text-muted leading-relaxed">
-              {message || 'The link is invalid or has expired.'}
+              {message || '链接无效或已过期。'}
             </p>
             <Link href="/login" className="btn-primary inline-block">
-              Back to Sign In
+              返回登录
             </Link>
           </>
         )}

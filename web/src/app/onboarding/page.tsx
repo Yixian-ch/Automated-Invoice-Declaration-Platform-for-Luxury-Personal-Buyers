@@ -26,17 +26,14 @@ export default function OnboardingPage() {
     setError('');
     setLaunching(true);
     try {
-      // Request a presigned upload URL for the passport photo
       const fileName = 'passport.jpg';
       const mimeType = 'image/jpeg';
       const res = await kycApi.startSession('kyc', fileName, mimeType, accessToken);
-      // Upload directly to presigned URL
       await fetch(res.presignedUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: new Blob() });
-      // Confirm upload (mark as pending review)
       await kycApi.confirm(res.s3Key, accessToken);
       setStep('pending');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start verification');
+      setError(err instanceof Error ? err.message : '启动认证失败');
     } finally {
       setLaunching(false);
     }
@@ -47,17 +44,14 @@ export default function OnboardingPage() {
     setError('');
     setLaunching(true);
     try {
-      // Request a presigned upload URL for the business document
       const fileName = 'business.pdf';
       const mimeType = 'application/pdf';
       const res = await kycApi.startSession('kyb', fileName, mimeType, accessToken);
-      // Upload directly to presigned URL (placeholder blob)
       await fetch(res.presignedUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: new Blob() });
-      // Confirm upload (mark as pending review)
       await kycApi.confirm(res.s3Key, accessToken);
       setStep('pending');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start business verification');
+      setError(err instanceof Error ? err.message : '启动企业认证失败');
     } finally {
       setLaunching(false);
     }
@@ -75,11 +69,11 @@ export default function OnboardingPage() {
     <main className="flex min-h-screen flex-col items-center justify-center px-4 py-16">
       <div className="w-full max-w-2xl space-y-10">
 
-        {/* Header */}
+        {/* 头部 */}
         <div className="text-center space-y-3">
           <p className="text-xs tracking-[0.3em] uppercase text-muted">LIDP</p>
           <h1 className="text-4xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-            Identity Verification
+            身份认证
           </h1>
           <div className="w-8 h-px bg-gold mx-auto" />
         </div>
@@ -90,48 +84,47 @@ export default function OnboardingPage() {
           </p>
         )}
 
-        {/* Intro step */}
+        {/* 介绍步骤 */}
         {step === 'intro' && (
           <div className="card-luxury space-y-6">
             <div>
-              <p className="text-xs tracking-widest uppercase text-muted mb-3">What we&apos;ll verify</p>
+              <p className="text-xs tracking-widest uppercase text-muted mb-3">需验证的内容</p>
               <ul className="space-y-3 text-sm text-ink">
                 <li className="flex gap-3">
                   <span className="text-gold mt-0.5">—</span>
-                  <span>Your identity via passport or national ID (KYC)</span>
+                  <span>您的身份证明文件（护照或身份证）—— KYC</span>
                 </li>
                 {!user.registeredViaInvite && (
                   <li className="flex gap-3">
                     <span className="text-gold mt-0.5">—</span>
-                    <span>Your business registration document (KYB)</span>
+                    <span>您的企业注册文件 —— KYB</span>
                   </li>
                 )}
               </ul>
             </div>
             <div className="border-t border-border pt-4">
               <p className="text-xs text-muted leading-relaxed">
-                Your documents are processed securely by Didit, our KYC/KYB partner. Data is stored in the EU and retained for 5 years per French AML law (CMF Art. L561-12). You may request deletion after your relationship with LIDP ends.
+                您的文件将由我们的 KYC/KYB 合作方 Didit 安全处理，数据存储于欧盟境内，依据法国反洗钱法（CMF 第 L561-12 条）保留 5 年。终止与 LIDP 的合作关系后，您可申请删除数据。
               </p>
             </div>
             <button onClick={startKyc} disabled={launching} className="btn-primary w-full">
-              {launching ? 'Preparing…' : 'Begin Verification'}
+              {launching ? '准备中…' : '开始认证'}
             </button>
           </div>
         )}
 
-        {/* KYC / KYB step — Didit hosted iframe */}
+        {/* KYC / KYB 步骤 */}
         {(step === 'kyc' || step === 'kyb') && verifyUrl && (
           <div className="card-luxury space-y-4">
             <p className="text-xs tracking-widest uppercase text-muted">
-              {step === 'kyc' ? 'Identity Verification' : 'Business Verification'}
+              {step === 'kyc' ? '身份认证' : '企业认证'}
             </p>
 
-            {/* Dev bypass mode */}
             {verifyUrl === '__bypass__' ? (
               <div className="border border-dashed border-gold/40 bg-gold/5 p-6 text-center space-y-3">
-                <p className="text-xs tracking-widest uppercase text-gold">Dev Mode — KYC Bypassed</p>
+                <p className="text-xs tracking-widest uppercase text-gold">开发模式 — KYC 已跳过</p>
                 <p className="text-sm text-muted">
-                  {step === 'kyc' ? 'KYC' : 'KYB'} auto-approved. Set <code className="text-xs bg-surface px-1 py-0.5">BYPASS_KYC=false</code> to use real Didit verification.
+                  {step === 'kyc' ? 'KYC' : 'KYB'} 已自动通过。设置 <code className="text-xs bg-surface px-1 py-0.5">BYPASS_KYC=false</code> 以启用真实认证。
                 </p>
                 <button
                   onClick={async () => {
@@ -144,7 +137,7 @@ export default function OnboardingPage() {
                   }}
                   className="btn-primary text-sm"
                 >
-                  {step === 'kyc' && !user.registeredViaInvite ? 'Continue to Business Verification →' : 'Continue →'}
+                  {step === 'kyc' && !user.registeredViaInvite ? '继续企业认证 →' : '继续 →'}
                 </button>
               </div>
             ) : (
@@ -154,23 +147,22 @@ export default function OnboardingPage() {
                   allow="camera; microphone; fullscreen; autoplay; encrypted-media"
                   className="w-full border-0"
                   style={{ height: '620px', minHeight: '500px' }}
-                  title={step === 'kyc' ? 'Identity Verification' : 'Business Verification'}
+                  title={step === 'kyc' ? '身份认证' : '企业认证'}
                 />
-                {/* After KYC, self-registered users (no invite) must also do KYB */}
                 {step === 'kyc' && !user.registeredViaInvite && (
                   <button onClick={startKyb} disabled={launching} className="btn-primary w-full">
-                    {launching ? 'Preparing…' : 'Continue to Business Verification'}
+                    {launching ? '准备中…' : '继续企业认证'}
                   </button>
                 )}
                 <button onClick={() => setStep('pending')} className="btn-ghost w-full text-sm">
-                  I&apos;ve completed verification — check back later
+                  我已完成认证，稍后查看结果
                 </button>
               </>
             )}
           </div>
         )}
 
-        {/* Pending step */}
+        {/* 等待审核步骤 */}
         {step === 'pending' && (
           <div className="card-luxury text-center space-y-6">
             <div className="w-12 h-12 border border-gold text-gold flex items-center justify-center mx-auto text-xl">
@@ -178,14 +170,14 @@ export default function OnboardingPage() {
             </div>
             <div className="space-y-2">
               <p className="text-lg font-light" style={{ fontFamily: 'var(--font-serif)' }}>
-                Verification In Progress
+                认证审核中
               </p>
               <p className="text-sm text-muted leading-relaxed">
-                Your documents are being reviewed. This typically takes 1–2 business days. You will receive an email when your account is approved.
+                您的文件正在审核中，通常需要 1-2 个工作日。账户通过后您将收到邮件通知。
               </p>
             </div>
             <button onClick={async () => { await refreshUser(); router.push('/dashboard'); }} className="btn-ghost text-sm">
-              Return to dashboard
+              返回工作台
             </button>
           </div>
         )}
