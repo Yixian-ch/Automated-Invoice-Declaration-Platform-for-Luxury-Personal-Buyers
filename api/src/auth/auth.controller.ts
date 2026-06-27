@@ -1,9 +1,7 @@
 import {
   Controller,
   Post,
-  Get,
   Body,
-  Param,
   Req,
   Res,
   UseGuards,
@@ -33,11 +31,6 @@ export class AuthController {
   @Post('register')
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
-  }
-
-  @Get('verify-email/:token')
-  verifyEmail(@Param('token') token: string) {
-    return this.authService.verifyEmail(token);
   }
 
   @Post('login')

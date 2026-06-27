@@ -8,13 +8,11 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserRole, UserStatus, KycStatus, KybStatus, InviteCodeStatus, AccountType } from '@prisma/client';
-import { MailService } from '../mail/mail.service';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -25,7 +23,6 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
-    private readonly mailService: MailService,
   ) {}
 
   // ─── Registration ────────────────────────────────────────────────────────────
@@ -44,12 +41,10 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    const bypassEmailVerification = this.config.get<string>('BYPASS_EMAIL_VERIFICATION') === 'true';
     const bypassKyc = this.config.get<string>('BYPASS_KYC') === 'true';
-    const emailVerificationToken = bypassEmailVerification ? null : uuidv4();
 
-    const bypassFields = {
-      ...(bypassEmailVerification && { emailVerifiedAt: new Date() }),
+    const extraFields = {
+      emailVerifiedAt: new Date(),
       ...(bypassKyc && { kycStatus: KycStatus.APPROVED, kybStatus: KybStatus.APPROVED }),
     };
 
@@ -83,10 +78,9 @@ export class AuthService {
             role: invite.intendedRole,
             accountType: AccountType.INDIVIDUAL,
             status: UserStatus.REGISTERED,
-            emailVerificationToken,
             organizationId: invite.intendedOrgId ?? undefined,
             registeredViaInvite: true,
-            ...bypassFields,
+            ...extraFields,
           },
         });
         await tx.inviteCode.update({
@@ -111,10 +105,7 @@ export class AuthService {
         return newUser;
       });
 
-      if (!bypassEmailVerification) {
-        await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken!);
-      }
-      return { message: 'Registration successful. Please verify your email.' };
+      return { message: 'Registration successful.' };
     }
 
     // ── Path A: self-registration (new reseller or organisation) ───────────────
@@ -147,9 +138,8 @@ export class AuthService {
           role: isOrg ? UserRole.ORG_ADMIN : UserRole.RESELLER,
           accountType: isOrg ? AccountType.ORGANIZATION : AccountType.INDIVIDUAL,
           status: UserStatus.REGISTERED,
-          emailVerificationToken,
           organizationId: orgId,
-          ...bypassFields,
+          ...extraFields,
         },
       });
 
@@ -168,37 +158,7 @@ export class AuthService {
       return newUser;
     });
 
-    if (!bypassEmailVerification) {
-      await this.mailService.sendVerificationEmail(user.email, user.firstName, emailVerificationToken!);
-    }
-    return { message: 'Registration successful. Please verify your email.' };
-  }
-
-  // ─── Email Verification ───────────────────────────────────────────────────────
-
-  async verifyEmail(token: string) {
-    const user = await this.usersService.findByEmailVerificationToken(token);
-    if (!user) throw new BadRequestException('Invalid or expired verification token');
-    if (user.emailVerifiedAt) return { message: 'Email already verified' };
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: user.id },
-        data: { emailVerifiedAt: new Date(), emailVerificationToken: null },
-      });
-      await tx.auditLog.create({
-        data: {
-          actorId: user.id,
-          actorRole: user.role,
-          action: 'EMAIL_VERIFIED',
-          resourceType: 'User',
-          resourceId: user.id,
-          userId: user.id,
-        },
-      });
-    });
-
-    return { message: 'Email verified successfully' };
+    return { message: 'Registration successful.' };
   }
 
   // ─── Login ────────────────────────────────────────────────────────────────────
@@ -209,11 +169,6 @@ export class AuthService {
 
     const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
-
-    const bypassEmailVerification = this.config.get<string>('BYPASS_EMAIL_VERIFICATION') === 'true';
-    if (!bypassEmailVerification && !user.emailVerifiedAt) {
-      throw new UnauthorizedException('Please verify your email before logging in');
-    }
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.role);
 
