@@ -53,6 +53,8 @@ services:
       - ./api/.env
     expose:
       - '3001'
+    volumes:
+      - uploads_data:/app/uploads
 
   web:
     build:
@@ -84,3 +86,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:
