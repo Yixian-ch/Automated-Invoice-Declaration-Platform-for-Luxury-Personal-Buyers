@@ -46,7 +46,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-lidp}:${POSTGRES_PASSWORD:-lidp_dev_secret}@postgres:5432/${POSTGRES_DB:-lidp_db}
       REDIS_URL: redis://redis:6379
     env_file:
@@ -54,7 +54,7 @@ services:
     ports:
       - '3001:3001'
     volumes:
-      - ./api/src:/app/src
+      - uploads_data:/app/uploads
 
   web:
     build:
@@ -72,3 +72,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

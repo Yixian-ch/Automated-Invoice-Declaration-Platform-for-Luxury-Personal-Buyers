@@ -1,9 +1,7 @@
 import {
   Injectable,
-  BadRequestException,
   UnauthorizedException,
   ConflictException,
-  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -12,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { UserRole, UserStatus, KycStatus, KybStatus, InviteCodeStatus, AccountType } from '@prisma/client';
+import { UserRole, UserStatus, AccountType } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -25,121 +23,25 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  // ─── Registration ────────────────────────────────────────────────────────────
-
   async register(dto: RegisterDto) {
-    // Validate: must provide either inviteCode (Path B) or accountType (Path A)
-    if (!dto.inviteCode && !dto.accountType) {
-      throw new BadRequestException(
-        'Provide either an invite code (to join an organisation) or select an account type (to register as a new reseller).',
-      );
-    }
-
-    // 1. Check email uniqueness
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already registered');
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    const bypassKyc = this.config.get<string>('BYPASS_KYC') === 'true';
-
-    const extraFields = {
-      emailVerifiedAt: new Date(),
-      ...(bypassKyc && { kycStatus: KycStatus.APPROVED, kybStatus: KybStatus.APPROVED }),
-    };
-
-    // ── Path B: invite-based registration ──────────────────────────────────────
-    if (dto.inviteCode) {
-      const invite = await this.prisma.inviteCode.findUnique({
-        where: { code: dto.inviteCode },
-        include: { organization: true },
-      });
-      if (!invite) throw new NotFoundException('Invalid invite code');
-      if (invite.status !== InviteCodeStatus.ACTIVE) {
-        throw new BadRequestException('Invite code is no longer valid');
-      }
-      if (invite.expiresAt < new Date()) {
-        await this.prisma.inviteCode.update({
-          where: { id: invite.id },
-          data: { status: InviteCodeStatus.EXPIRED },
-        });
-        throw new BadRequestException('Invite code has expired');
-      }
-
-      const user = await this.prisma.$transaction(async (tx) => {
-        const newUser = await tx.user.create({
-          data: {
-            email: dto.email,
-            passwordHash,
-            firstName: dto.firstName,
-            lastName: dto.lastName,
-            phone: dto.phone,
-            locale: dto.locale ?? 'fr',
-            role: invite.intendedRole,
-            accountType: AccountType.INDIVIDUAL,
-            status: UserStatus.REGISTERED,
-            organizationId: invite.intendedOrgId ?? undefined,
-            registeredViaInvite: true,
-            ...extraFields,
-          },
-        });
-        await tx.inviteCode.update({
-          where: { id: invite.id },
-          data: {
-            status: InviteCodeStatus.USED,
-            usedByUserId: newUser.id,
-            usedAt: new Date(),
-          },
-        });
-        await tx.auditLog.create({
-          data: {
-            actorId: newUser.id,
-            actorRole: newUser.role,
-            action: 'USER_REGISTERED_VIA_INVITE',
-            resourceType: 'User',
-            resourceId: newUser.id,
-            userId: newUser.id,
-            organizationId: invite.intendedOrgId ?? undefined,
-          },
-        });
-        return newUser;
-      });
-
-      return { message: 'Registration successful.' };
-    }
-
-    // ── Path A: self-registration (new reseller or organisation) ───────────────
-    const isOrg = dto.accountType === 'ORGANIZATION';
-
-    const user = await this.prisma.$transaction(async (tx) => {
-      // If registering as an organisation, create the org first
-      let orgId: string | undefined;
-      if (isOrg) {
-        if (!dto.companyName) {
-          throw new BadRequestException('Company name is required for organisation accounts');
-        }
-        const org = await tx.organization.create({
-          data: {
-            name: dto.companyName,
-            registrationNo: dto.companyRegistrationNo ?? undefined,
-          },
-        });
-        orgId = org.id;
-      }
-
+    await this.prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
           email: dto.email,
           passwordHash,
           firstName: dto.firstName,
           lastName: dto.lastName,
-          phone: dto.phone,
-          locale: dto.locale ?? 'fr',
-          role: isOrg ? UserRole.ORG_ADMIN : UserRole.RESELLER,
-          accountType: isOrg ? AccountType.ORGANIZATION : AccountType.INDIVIDUAL,
+          phone: dto.phone ?? null,
+          locale: dto.locale ?? 'zh',
+          role: UserRole.RESELLER,
+          accountType: AccountType.INDIVIDUAL,
           status: UserStatus.REGISTERED,
-          organizationId: orgId,
-          ...extraFields,
+          emailVerifiedAt: new Date(),
         },
       });
 
@@ -151,17 +53,12 @@ export class AuthService {
           resourceType: 'User',
           resourceId: newUser.id,
           userId: newUser.id,
-          organizationId: orgId,
         },
       });
-
-      return newUser;
     });
 
-    return { message: 'Registration successful.' };
+    return { message: '注册成功' };
   }
-
-  // ─── Login ────────────────────────────────────────────────────────────────────
 
   async login(dto: LoginDto, ip?: string) {
     const user = await this.usersService.findByEmail(dto.email);
@@ -172,7 +69,6 @@ export class AuthService {
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.role);
 
-    // Store hashed refresh token
     const refreshTokenHash = await bcrypt.hash(refreshToken, BCRYPT_ROUNDS);
     await this.prisma.user.update({
       where: { id: user.id },
@@ -194,13 +90,10 @@ export class AuthService {
     return { accessToken, refreshToken, user: this.usersService.sanitize(user) };
   }
 
-  // ─── Refresh ──────────────────────────────────────────────────────────────────
-
   async refresh(userId: string, refreshToken: string) {
     const user = await this.usersService.findById(userId);
-    if (!user || !user.refreshTokenHash || user.deletedAt) {
-      throw new UnauthorizedException();
-    }
+    if (!user || !user.refreshTokenHash || user.deletedAt) throw new UnauthorizedException();
+
     const valid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
     if (!valid) throw new UnauthorizedException('Refresh token invalid or expired');
 
@@ -210,8 +103,6 @@ export class AuthService {
 
     return tokens;
   }
-
-  // ─── Logout ───────────────────────────────────────────────────────────────────
 
   async logout(userId: string) {
     await this.prisma.user.update({
@@ -230,19 +121,15 @@ export class AuthService {
     return { message: 'Logged out' };
   }
 
-  // ─── Token helpers ────────────────────────────────────────────────────────────
-
   private async generateTokens(userId: string, email: string, role: string) {
     const payload = { sub: userId, email, role };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.config.get<string>('JWT_SECRET')!,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expiresIn: (this.config.get<string>('JWT_EXPIRY') ?? '15m') as any,
       }),
       this.jwtService.signAsync(payload, {
         secret: this.config.get<string>('JWT_REFRESH_SECRET')!,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expiresIn: (this.config.get<string>('JWT_REFRESH_EXPIRY') ?? '7d') as any,
       }),
     ]);

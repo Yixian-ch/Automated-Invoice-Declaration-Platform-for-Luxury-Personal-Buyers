@@ -5,9 +5,6 @@ import { BullModule } from '@nestjs/bull';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
-import { OrganizationsModule } from './organizations/organizations.module';
-import { InviteModule } from './invite/invite.module';
-import { KycModule } from './kyc/kyc.module';
 import { InvoiceModule } from './invoice/invoice.module';
 import { MailModule } from './mail/mail.module';
 import { AdminModule } from './admin/admin.module';
@@ -58,9 +55,6 @@ import { AdminModule } from './admin/admin.module';
     PrismaModule,
     AuthModule,
     UsersModule,
-    OrganizationsModule,
-    InviteModule,
-    KycModule,
     InvoiceModule,
     MailModule,
     AdminModule,

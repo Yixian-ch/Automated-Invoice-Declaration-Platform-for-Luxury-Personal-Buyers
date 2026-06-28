@@ -2,96 +2,57 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
-import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bull';
 import { v4 as uuidv4 } from 'uuid';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { CashbackService } from '../cashback/cashback.service.js';
-import { InitiateUploadDto } from './dto/initiate-upload.dto.js';
 
 export const OCR_QUEUE = 'ocr';
 
 @Injectable()
 export class InvoiceService {
   private readonly logger = new Logger(InvoiceService.name);
-  private readonly bypassS3: boolean;
-  private readonly appUrl: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly cashback: CashbackService,
-    private readonly config: ConfigService,
     @InjectQueue(OCR_QUEUE) private readonly ocrQueue: Queue,
-  ) {
-    this.bypassS3 =
-      config.get<string>('NODE_ENV') !== 'production' &&
-      config.get<string>('BYPASS_S3') === 'true';
-    this.appUrl = config.get<string>('API_URL', 'http://localhost:3001');
-  }
+  ) {}
 
   /**
-   * Step 1 — Create a PENDING invoice record and return a presigned PUT URL.
-   * The frontend uploads directly to S3 and then calls confirmUpload().
+   * Upload file + create DB record + queue OCR — all in one step.
    */
-  async initiateUpload(userId: string, dto: InitiateUploadDto) {
+  async uploadAndEnqueue(
+    userId: string,
+    buffer: Buffer,
+    mimeType: string,
+    originalFilename: string,
+    fileSizeBytes: number,
+  ) {
     const invoiceId = uuidv4();
-    const s3Key = this.bypassS3
-      ? `dev/bypass/${userId}/${invoiceId}`
-      : this.storage.buildInvoiceKey(userId, invoiceId, dto.originalFilename);
-    const bucket = this.bypassS3 ? 'dev-bypass' : this.storage.getBucketName();
 
-    const presignedUrl = this.bypassS3
-      ? `${this.appUrl}/api/v1/invoices/${invoiceId}/dev-sink`
-      : await this.storage.getPresignedUploadUrl(s3Key, dto.mimeType);
-
-    if (this.bypassS3) {
-      this.logger.warn(`[DEV] BYPASS_S3: returning dev-sink URL for invoice ${invoiceId}`);
-    }
+    this.storage.saveFile(invoiceId, buffer);
 
     const invoice = await this.prisma.invoice.create({
       data: {
         id: invoiceId,
         userId,
-        s3Key,
-        s3Bucket: bucket,
-        originalFilename: dto.originalFilename,
-        mimeType: dto.mimeType,
-        fileSizeBytes: dto.fileSizeBytes ? parseInt(dto.fileSizeBytes, 10) : null,
+        originalFilename,
+        mimeType,
+        fileSizeBytes,
+        s3Key: invoiceId,
+        s3Bucket: 'local',
         status: 'PENDING',
+        uploadedAt: new Date(),
       },
     });
 
-    return {
-      invoiceId: invoice.id,
-      presignedUrl,
-      s3Key,
-    };
-  }
-
-  /**
-   * Step 2 — Client confirms the S3 upload is complete; queues background OCR.
-   * Status stays PENDING throughout — OCR only fills in field data.
-   */
-  async confirmUpload(userId: string, invoiceId: string) {
-    const invoice = await this.findOwnInvoice(userId, invoiceId);
-
-    if (invoice.uploadedAt) {
-      throw new BadRequestException('Invoice already confirmed');
-    }
-
-    const updated = await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: { uploadedAt: new Date() },
-    });
-
-    // Enqueue OCR job — runs in background, does not change invoice status
     await this.ocrQueue.add(
       'process-invoice',
       { invoiceId },
@@ -103,13 +64,10 @@ export class InvoiceService {
       },
     );
 
-    this.logger.log(`OCR job queued for invoice ${invoiceId}`);
-    return updated;
+    this.logger.log(`Invoice ${invoiceId} saved and queued for OCR`);
+    return invoice;
   }
 
-  /**
-   * List invoices belonging to a user (most recent first).
-   */
   async listByUser(userId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
@@ -142,31 +100,20 @@ export class InvoiceService {
     return { items, total, page, limit };
   }
 
-  /**
-   * Get full invoice detail (owner or admin).
-   */
   async getById(userId: string, invoiceId: string, isAdmin = false) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
     });
 
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    if (!isAdmin && invoice.userId !== userId) {
-      throw new ForbiddenException('Access denied');
-    }
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (!isAdmin && invoice.userId !== userId) throw new ForbiddenException('Access denied');
 
     return invoice;
   }
 
-  /**
-   * Admin: list all invoices with optional status filter.
-   */
   async adminList(status?: string, page = 1, limit = 50, userId?: string) {
     const skip = (page - 1) * limit;
-    const where: any = {};
+    const where: Record<string, unknown> = {};
     if (status) where.status = status;
     if (userId) where.userId = userId;
 
@@ -178,12 +125,7 @@ export class InvoiceService {
         take: limit,
         include: {
           user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-            },
+            select: { id: true, firstName: true, lastName: true, email: true },
           },
         },
       }),
@@ -193,9 +135,6 @@ export class InvoiceService {
     return { items, total, page, limit };
   }
 
-  /**
-   * Admin: manually approve an invoice and recalculate cashback.
-   */
   async approve(adminId: string, invoiceId: string, note?: string) {
     const invoice = await this.prisma.invoice.findUniqueOrThrow({
       where: { id: invoiceId },
@@ -231,9 +170,6 @@ export class InvoiceService {
     });
   }
 
-  /**
-   * Admin: reject an invoice.
-   */
   async reject(adminId: string, invoiceId: string, note: string) {
     return this.prisma.invoice.update({
       where: { id: invoiceId },
@@ -264,28 +200,14 @@ export class InvoiceService {
   async deleteInvoice(invoiceId: string): Promise<void> {
     const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
+    this.storage.deleteFile(invoiceId);
     await this.prisma.invoice.delete({ where: { id: invoiceId } });
   }
 
-  async getFileMeta(invoiceId: string): Promise<{ mimeType: string | null } | null> {
+  async getFileMeta(invoiceId: string) {
     return this.prisma.invoice.findUnique({
       where: { id: invoiceId },
       select: { mimeType: true },
     });
-  }
-
-  // ─── Helpers ───────────────────────────────
-
-  private async findOwnInvoice(userId: string, invoiceId: string) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-    });
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-    if (invoice.userId !== userId) {
-      throw new ForbiddenException('Access denied');
-    }
-    return invoice;
   }
 }
