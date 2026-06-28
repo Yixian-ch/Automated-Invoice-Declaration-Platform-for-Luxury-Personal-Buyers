@@ -143,15 +143,29 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     };
   }
 
+  private _computeConfidence(raw: Record<string, any>): number {
+    // Score based on how many of the three required fields were extracted.
+    // Each missing field costs ~0.13 points from a 0.90 ceiling.
+    const required = [raw.merchantName, raw.purchaseDate, raw.grandTotalAmount];
+    const presentCount = required.filter(Boolean).length;
+    let score = 0.50 + (presentCount / required.length) * 0.40; // 0.50 → 0.90
+
+    if (raw.arithmeticCheck === 'fail') score -= 0.15;
+    if (raw.needsReview === true) score -= 0.05;
+
+    return parseFloat(Math.max(0, Math.min(1, score)).toFixed(2));
+  }
+
   private _mapToOcrResult(raw: Record<string, any>, fallbacks: any, rawText: string): OcrResult {
     const merchantName = raw.merchantName || null;
+    const confidence = this._computeConfidence(raw);
     return {
       merchantName,
-      merchantNameConfidence: raw.merchantName ? 0.92 : 0.0,
+      merchantNameConfidence: raw.merchantName ? 0.90 : 0.0,
       purchaseDate: raw.purchaseDate ? new Date(raw.purchaseDate) : undefined,
-      purchaseDateConfidence: raw.purchaseDate ? 0.94 : 0.0,
+      purchaseDateConfidence: raw.purchaseDate ? 0.90 : 0.0,
       grandTotalAmount: raw.grandTotalAmount ? parseFloat(raw.grandTotalAmount) : undefined,
-      grandTotalAmountConfidence: raw.grandTotalAmount ? 0.96 : 0.0,
+      grandTotalAmountConfidence: raw.grandTotalAmount ? 0.90 : 0.0,
       taxRefundAmount: raw.taxRefundAmount ? parseFloat(raw.taxRefundAmount) : undefined,
       buyerName: raw.buyerName || null,
       lineItems: (raw.lineItems || []).map((item: any) => ({
@@ -160,13 +174,13 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         itemCategory: item.itemCategory || null,
         quantity: item.quantity ? parseInt(item.quantity, 10) : 1,
         amount_ttc: item.amount_ttc ? parseFloat(item.amount_ttc) : 0,
-        confidence: 0.90,
+        confidence,
       })),
       arithmeticCheck: raw.arithmeticCheck || 'pass',
       needsReview: raw.needsReview ?? false,
       reviewReasons: raw.reviewReasons || [],
       vendorName: merchantName,
-      confidence: 0.93,
+      confidence,
       rawJson: {
         merchant_name: raw.merchantName,
         purchase_date: raw.purchaseDate,
@@ -177,7 +191,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         arithmetic_check: raw.arithmeticCheck,
         needs_review: raw.needsReview,
         review_reasons: raw.reviewReasons,
-        confidence: 0.93,
+        confidence,
         raw_text: rawText,
       },
     };
