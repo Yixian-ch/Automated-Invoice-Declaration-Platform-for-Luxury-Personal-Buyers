@@ -8,18 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const STATUS_LABEL: Record<string, string> = {
-  UPLOADED: '待审核',
-  OCR_PROCESSING: '待审核',
-  OCR_DONE: '待审核',
   PENDING: '待审核',
   APPROVED: '审核成功',
   REJECTED: '审核失败',
 };
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  UPLOADED: 'outline',
-  OCR_PROCESSING: 'outline',
-  OCR_DONE: 'outline',
   PENDING: 'outline',
   APPROVED: 'default',
   REJECTED: 'destructive',
@@ -63,9 +57,7 @@ export default function DashboardPage() {
     );
   }
 
-  const pending = invoices.filter((i) =>
-    ['UPLOADED', 'OCR_PROCESSING', 'OCR_DONE', 'PENDING'].includes(i.status)
-  ).length;
+  const pending = invoices.filter((i) => i.status === 'PENDING').length;
   const totalCashback = invoices
     .filter((i) => i.status === 'APPROVED')
     .reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);
