@@ -20,17 +20,21 @@ import { CashbackModule } from '../cashback/cashback.module';
     BullModule.registerQueueAsync({
       name: OCR_QUEUE,
       imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        redis: {
-          host: config.get<string>('REDIS_HOST', 'localhost'),
-          port: config.get<number>('REDIS_PORT', 6379),
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>('REDIS_URL');
+        if (redisUrl) return { url: redisUrl };
+        return {
+          redis: {
+            host: config.get<string>('REDIS_HOST', 'localhost'),
+            port: config.get<number>('REDIS_PORT', 6379),
+          },
+        };
+      },
       inject: [ConfigService],
     }),
   ],
   controllers: [InvoiceController],
-  providers: [InvoiceService, OcrProcessor, ConfigService],
+  providers: [InvoiceService, OcrProcessor],
   exports: [InvoiceService],
 })
 export class InvoiceModule {}

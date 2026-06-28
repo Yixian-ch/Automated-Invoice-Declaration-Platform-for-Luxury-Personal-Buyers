@@ -40,12 +40,6 @@ export type RegisterPayload = {
   lastName: string;
   phone?: string;
   locale?: string;
-  /** Path B — employee invite */
-  inviteCode?: string;
-  /** Path A — self-registration */
-  accountType?: 'INDIVIDUAL' | 'ORGANIZATION';
-  companyName?: string;
-  companyRegistrationNo?: string;
 };
 
 export type LoginPayload = { email: string; password: string };
@@ -62,12 +56,7 @@ export type UserProfile = {
   lastName: string;
   role: string;
   status: string;
-  kycStatus: string;
-  kybStatus: string;
-  accountType: string;
-  organizationId: string | null;
   locale: string;
-  registeredViaInvite: boolean;
 };
 
 export const authApi = {
@@ -86,44 +75,10 @@ export const authApi = {
   me: (token: string) =>
     request<UserProfile>('/users/me', { token }),
 
-  verifyEmail: (token: string) =>
-    request<{ message: string }>(`/auth/verify-email/${encodeURIComponent(token)}`, { method: 'GET' }),
 };
 
-// ─── Invites ──────────────────────────────────────────────────────────────────
 
-export type InvitePayload = {
-  intendedRole: string;
-  intendedOrgId?: string;
-  expiryHours?: number;
-};
 
-export const inviteApi = {
-  create: (data: InvitePayload, token: string) =>
-    request<{ id: string; code: string; expiresAt: string }>('/invites', {
-      method: 'POST',
-      body: data,
-      token,
-    }),
-  listAll: (token: string) =>
-    request<unknown[]>('/invites', { token }),
-};
-
-// ─── KYC ─────────────────────────────────────────────────────────────────────
-
-export const kycApi = {
-  startSession: (type: 'kyc' | 'kyb', originalFilename: string, mimeType: string, token: string) =>
-    request<{ uploadId: string; presignedUrl: string; s3Key: string }>(
-      '/kyc/session',
-      { method: 'POST', body: { type, originalFilename, mimeType }, token },
-    ),
-  confirm: (s3Key: string, token: string) =>
-    request('/kyc/confirm', { method: 'POST', body: { s3Key }, token }),
-  adminApprove: (userId: string, note: string | undefined, token: string) =>
-    request(`/kyc/${encodeURIComponent(userId)}/approve`, { method: 'POST', body: { note }, token }),
-  adminReject: (userId: string, note: string | undefined, token: string) =>
-    request(`/kyc/${encodeURIComponent(userId)}/reject`, { method: 'POST', body: { note }, token }),
-};
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
@@ -157,27 +112,38 @@ export type Invoice = {
   createdAt: string;
 };
 
-export type UploadUrlResponse = {
-  invoiceId: string;
-  presignedUrl: string;
-  s3Key: string;
-};
+
 
 export const invoiceApi = {
-  /** Step 1: get a presigned PUT URL from the backend */
-  getUploadUrl: (
-    data: { mimeType: string; originalFilename: string; fileSizeBytes?: string },
+  /** Upload file directly (multipart POST) */
+  upload: (
     token: string,
-  ) =>
-    request<UploadUrlResponse>('/invoices/upload-url', {
-      method: 'POST',
-      body: data,
-      token,
+    file: File,
+    onProgress?: (pct: number) => void,
+  ): Promise<Invoice> =>
+    new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/api/v1/invoices/upload`);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.withCredentials = true;
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        };
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error('Invalid response')); }
+        } else {
+          try { reject(new Error(JSON.parse(xhr.responseText).message ?? `上传失败 (${xhr.status})`)); }
+          catch { reject(new Error(`上传失败 (${xhr.status})`)); }
+        }
+      };
+      xhr.onerror = () => reject(new Error('网络错误'));
+      xhr.send(formData);
     }),
-
-  /** Step 2: after S3 upload, confirm to trigger OCR */
-  confirm: (invoiceId: string, token: string) =>
-    request<Invoice>(`/invoices/${invoiceId}/confirm`, { method: 'POST', token }),
 
   /** List current user's invoices */
   list: (token: string, page = 1) =>

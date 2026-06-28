@@ -107,20 +107,9 @@ export default function UploadPage() {
       try {
         updateItem(item.id, { status: 'uploading', progress: 0 });
 
-        const { invoiceId, presignedUrl } = await invoiceApi.getUploadUrl(
-          {
-            mimeType: item.file.type,
-            originalFilename: item.file.name,
-            fileSizeBytes: String(item.file.size),
-          },
-          accessToken,
-        );
-
-        await uploadToS3(presignedUrl, item.file, (pct) =>
+        await invoiceApi.upload(accessToken, item.file, (pct) =>
           updateItem(item.id, { progress: pct }),
         );
-
-        await invoiceApi.confirm(invoiceId, accessToken);
 
         updateItem(item.id, { status: 'done', progress: 100 });
         setUploadedFilenames((prev) => new Set(prev).add(item.file.name));
@@ -258,7 +247,7 @@ export default function UploadPage() {
           </Button>
 
           <p className="text-xs text-stone-400 text-center leading-relaxed">
-            小票已安全存储于欧盟数据中心（AWS 巴黎区）。OCR 自动提取关键字段，审核员将在 2 个工作日内完成审核。
+            小票存储于服务器。OCR 自动提取关键字段，审核员将在 2 个工作日内完成审核。
           </p>
         </div>
       </main>
@@ -336,36 +325,4 @@ function FileRow({
       )}
     </div>
   );
-}
-
-// ─── S3 上传工具函数 ──────────────────────────────────────────────────────────
-
-function uploadToS3(
-  presignedUrl: string,
-  file: File,
-  onProgress: (pct: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', presignedUrl);
-    xhr.setRequestHeader('Content-Type', file.type);
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(100);
-        resolve();
-      } else {
-        reject(new Error(`上传失败，状态码 ${xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error('上传时网络错误'));
-    xhr.send(file);
-  });
 }

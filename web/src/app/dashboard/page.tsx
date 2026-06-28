@@ -8,12 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const STATUS_LABEL: Record<string, string> = {
-  UPLOADED: '上传成功',
-  OCR_PROCESSING: 'OCR 识别中',
+  UPLOADED: '待审核',
+  OCR_PROCESSING: '待审核',
   OCR_DONE: '待审核',
   PENDING: '待审核',
-  APPROVED: '已通过',
-  REJECTED: '已拒绝',
+  APPROVED: '审核成功',
+  REJECTED: '审核失败',
 };
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -24,8 +24,6 @@ const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | '
   APPROVED: 'default',
   REJECTED: 'destructive',
 };
-
-const BYPASS_KYC = process.env.NEXT_PUBLIC_BYPASS_KYC === 'true';
 
 export default function DashboardPage() {
   const { user, isLoading, logout, accessToken } = useAuth();
@@ -51,7 +49,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!isLoading && !user) router.push('/login');
-    if (!isLoading && user && user.kycStatus === 'NOT_STARTED') router.push('/onboarding');
   }, [user, isLoading, router]);
 
   useEffect(() => {
@@ -66,8 +63,9 @@ export default function DashboardPage() {
     );
   }
 
-  const approved = invoices.filter((i) => i.status === 'APPROVED').length;
-  const pending = invoices.filter((i) => i.status === 'PENDING').length;
+  const pending = invoices.filter((i) =>
+    ['UPLOADED', 'OCR_PROCESSING', 'OCR_DONE', 'PENDING'].includes(i.status)
+  ).length;
   const totalCashback = invoices
     .filter((i) => i.status === 'APPROVED')
     .reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);
@@ -92,21 +90,6 @@ export default function DashboardPage() {
       {/* 内容区 */}
       <div className="flex-1 px-8 py-12 max-w-5xl mx-auto w-full space-y-10">
 
-        {/* KYC 提示横幅 */}
-        {!BYPASS_KYC && user.kycStatus !== 'APPROVED' && (
-          <div className="border border-warning/30 bg-warning/5 px-6 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-warning">需完成身份验证</p>
-              <p className="text-xs text-muted mt-0.5">
-                请完成 KYC 认证后再上传小票。
-              </p>
-            </div>
-            <a href="/onboarding" className="btn-primary text-xs px-4 py-2 whitespace-nowrap">
-              立即认证
-            </a>
-          </div>
-        )}
-
         <div className="flex items-end justify-between">
           <div>
             <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
@@ -114,14 +97,12 @@ export default function DashboardPage() {
             </h1>
             <div className="w-8 h-px bg-gold mt-3" />
           </div>
-          {(BYPASS_KYC || user.kycStatus === 'APPROVED') && (
-            <Button
-              onClick={() => router.push('/dashboard/upload')}
-              style={{ backgroundColor: '#B8966E', color: 'white' }}
-            >
-              上传小票
-            </Button>
-          )}
+          <Button
+            onClick={() => router.push('/dashboard/upload')}
+            style={{ backgroundColor: '#B8966E', color: 'white' }}
+          >
+            上传小票
+          </Button>
         </div>
 
         {/* 统计卡片 */}
@@ -162,14 +143,12 @@ export default function DashboardPage() {
           ) : invoices.length === 0 ? (
             <div className="text-center py-12 space-y-3">
               <p className="text-muted text-sm">暂无小票。</p>
-              {(BYPASS_KYC || user.kycStatus === 'APPROVED') && (
-                <button
-                  onClick={() => router.push('/dashboard/upload')}
-                  className="text-sm text-[#B8966E] hover:underline"
-                >
-                  上传第一张小票 →
-                </button>
-              )}
+              <button
+                onClick={() => router.push('/dashboard/upload')}
+                className="text-sm text-[#B8966E] hover:underline"
+              >
+                上传第一张小票 →
+              </button>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -177,7 +156,6 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-stone-100 text-xs text-muted uppercase tracking-wider">
                     <th className="text-left pb-3 font-normal">门店</th>
-                    <th className="text-left pb-3 font-normal">商品</th>
                     <th className="text-left pb-3 font-normal">日期</th>
                     <th className="text-right pb-3 font-normal">金额</th>
                     <th className="text-right pb-3 font-normal">返点</th>
@@ -193,9 +171,6 @@ export default function DashboardPage() {
                     >
                       <td className="py-3 pr-4 max-w-[180px] truncate text-stone-700">
                         {inv.vendorName ?? '—'}
-                      </td>
-                      <td className="py-3 pr-4 text-stone-600">
-                        {'—'}
                       </td>
                       <td className="py-3 pr-4 text-stone-500 text-xs">
                         {inv.purchaseDate
