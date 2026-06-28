@@ -8,12 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 const STATUS_LABEL: Record<string, string> = {
-  UPLOADED: '上传成功',
-  OCR_PROCESSING: 'OCR 识别中',
+  UPLOADED: '待审核',
+  OCR_PROCESSING: '待审核',
   OCR_DONE: '待审核',
   PENDING: '待审核',
-  APPROVED: '已通过',
-  REJECTED: '已拒绝',
+  APPROVED: '审核成功',
+  REJECTED: '审核失败',
 };
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {

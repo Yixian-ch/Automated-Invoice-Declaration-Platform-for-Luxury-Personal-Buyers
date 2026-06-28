@@ -10,8 +10,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
   PENDING: '待审核',
-  APPROVED: '已通过',
-  REJECTED: '已拒绝',
+  APPROVED: '审核成功',
+  REJECTED: '审核失败',
 };
 
 const STATUS_VARIANT: Record<InvoiceStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
