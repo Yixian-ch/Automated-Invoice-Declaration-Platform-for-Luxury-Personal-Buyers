@@ -29,11 +29,6 @@ export class OcrProcessor {
     this.logger.log(`Starting OCR for invoice ${invoiceId}`);
 
     try {
-      await this.prisma.invoice.update({
-        where: { id: invoiceId },
-        data: { status: 'OCR_PROCESSING' },
-      });
-
       const invoice = await this.prisma.invoice.findUniqueOrThrow({
         where: { id: invoiceId },
       });
