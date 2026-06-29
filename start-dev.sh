@@ -11,6 +11,7 @@ sleep 1
 
 echo "[dev] Starting NestJS API on :3001 (NODE_ENV=development)..."
 DATABASE_URL="postgresql://lidp:lidp_dev_secret@localhost:5432/lidp_db" \
+  REDIS_URL="redis://localhost:6379" \
   FRONTEND_URL="http://localhost:3000" \
   API_URL="http://localhost:3001" \
   BYPASS_S3=true \
