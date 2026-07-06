@@ -21,8 +21,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "LIDP — 奢侈品买手报税平台",
-  description: "专业买手的安全小票申报与返点管理平台",
+  title: "FeeLuxe — 连接高端精品店与商务合作伙伴",
+  description: "FeeLuxe 数字化对接平台，旗下返点平台为商务合作伙伴提供发票申报与佣金管理服务",
 };
 
 export default function RootLayout({
