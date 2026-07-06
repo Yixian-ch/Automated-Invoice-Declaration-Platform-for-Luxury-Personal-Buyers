@@ -21,8 +21,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "FeeLuxe — 连接高端精品店与商务合作伙伴",
-  description: "FeeLuxe 数字化对接平台，旗下返点平台为商务合作伙伴提供发票申报与佣金管理服务",
+  title: "Ruichi — 连接高端精品店与商务合作伙伴",
+  description: "Ruichi 数字化对接平台，旗下返点平台为商务合作伙伴提供发票申报与佣金管理服务",
 };
 
 export default function RootLayout({

@@ -75,16 +75,16 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
             <Image
-              src="/brand/feeluxe-mark.png"
-              alt="FeeLuxe"
+              src="/brand/ruichi-mark.png"
+              alt="Ruichi"
               width={22}
               height={27}
               className="h-6 w-auto"
               priority
             />
             <Image
-              src="/brand/feeluxe-wordmark.png"
-              alt="FEELUXE"
+              src="/brand/ruichi-wordmark.png"
+              alt="RUICHI"
               width={428}
               height={72}
               className="h-4 w-auto"
@@ -110,7 +110,7 @@ export default function HomePage() {
         </div>
         <div className="relative mx-auto max-w-4xl px-6 py-28 text-center">
           <p className="text-xs tracking-[0.35em] uppercase text-gold">
-            FeeLuxe · 高端零售数字化平台
+            Ruichi · 高端零售数字化平台
           </p>
           <h1
             className="mt-6 text-4xl leading-tight font-light sm:text-5xl"
@@ -123,7 +123,7 @@ export default function HomePage() {
           </p>
           <div className="mx-auto mt-8 h-px w-12 bg-gold" />
           <p className="mx-auto mt-8 max-w-xl text-sm leading-relaxed text-white/70">
-            FeeLuxe 是一款百分之百数字化的对接应用，将品牌精品店与领队、个人买手、
+            Ruichi 是一款百分之百数字化的对接应用，将品牌精品店与领队、个人买手、
             直播间等商务合作伙伴连接在一起，提供从客户引荐到发票、佣金结算的完整闭环。
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -272,8 +272,8 @@ export default function HomePage() {
       <footer className="border-t border-border py-10">
         <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-6 text-center">
           <Image
-            src="/brand/feeluxe-wordmark.png"
-            alt="FEELUXE"
+            src="/brand/ruichi-wordmark.png"
+            alt="RUICHI"
             width={428}
             height={72}
             className="h-4 w-auto opacity-80"
@@ -281,9 +281,9 @@ export default function HomePage() {
           <p className="text-xs text-muted">
             连接高端精品店与商务合作伙伴的数字化平台
           </p>
-          <p className="text-xs text-muted">www.feeluxe.com</p>
+          <p className="text-xs text-muted">https://ruichi.online/</p>
           <p className="text-[11px] text-muted/70">
-            © {new Date().getFullYear()} FeeLuxe. All rights reserved.
+            © {new Date().getFullYear()} Ruichi. All rights reserved.
           </p>
         </div>
       </footer>
