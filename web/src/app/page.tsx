@@ -129,7 +129,7 @@ export default function HomePage() {
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               href="/login"
-              className="btn-primary inline-flex items-center gap-2 bg-gold text-ink hover:bg-white"
+              className="btn-gold inline-flex items-center gap-2"
             >
               进入返点平台
               <ArrowRight className="h-4 w-4" />
@@ -260,7 +260,7 @@ export default function HomePage() {
           </p>
           <Link
             href="/login"
-            className="btn-primary inline-flex items-center gap-2 bg-gold text-ink hover:bg-white"
+            className="btn-gold inline-flex items-center gap-2"
           >
             登录返点平台
             <ArrowRight className="h-4 w-4" />
