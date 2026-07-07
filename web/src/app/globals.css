@@ -142,6 +142,26 @@ h1, h2, h3 {
          transition-colors duration-200;
 }
 
+.btn-dark {
+  @apply inline-flex items-center gap-2 rounded-md bg-ink px-6 py-3 text-sm font-medium text-white
+         hover:bg-ink/85 transition-colors duration-200;
+}
+
+.btn-outline-light {
+  @apply inline-flex items-center gap-2 rounded-md border border-border bg-white px-6 py-3 text-sm font-medium text-ink
+         hover:border-ink/40 transition-colors duration-200;
+}
+
+.bg-texture-weave {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(26, 26, 26, 0.035) 0px,
+    rgba(26, 26, 26, 0.035) 1px,
+    transparent 1px,
+    transparent 6px
+  );
+}
+
 .card-luxury {
   @apply bg-white border border-border p-8;
 }

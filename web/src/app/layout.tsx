@@ -21,8 +21,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Ruichi — 连接高端精品店与商务合作伙伴",
-  description: "Ruichi 数字化对接平台，旗下返点平台为商务合作伙伴提供发票申报与佣金管理服务",
+  title: "Ruichi",
+  description:
+    "Ruichi 是一款百分之百数字化去中心化的对接应用，将世界各大精品与客人建立高效隐私通道。",
 };
 
 export default function RootLayout({
