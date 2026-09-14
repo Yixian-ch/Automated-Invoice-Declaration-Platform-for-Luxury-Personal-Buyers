@@ -67,6 +67,12 @@ export class UsersController {
   ) {
     const doc = await this.usersService.getDocument(user.id, parseDocumentType(type));
     res.setHeader('Content-Type', doc.mimeType);
-    res.sendFile(doc.path);
+    res.sendFile(doc.path, (err) => {
+      // File can vanish between the existence check and sendFile (concurrent
+      // re-upload); answer with the API's JSON 404 instead of Express's default
+      if (err && !res.headersSent) {
+        res.status(404).json({ statusCode: 404, message: '文档不存在' });
+      }
+    });
   }
 }
