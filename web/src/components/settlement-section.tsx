@@ -6,6 +6,7 @@ import {
   settlementApi,
   type PendingCashback,
   type Settlement,
+  type SettlementMethod,
   type SettlementStatus,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -19,12 +20,18 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
-const STATUS_LABEL: Record<SettlementStatus, string> = {
-  CONFIRMED: '已确认（打款未发送）',
-  SENT: '打款处理中',
-  PAID: '已到账',
-  FAILED: '打款失败',
+const METHOD_LABEL: Record<SettlementMethod, string> = {
+  BANK_TRANSFER: '银行卡打款',
+  VOUCHER: '代金券',
+  GIFT_CARD: '礼品券',
 };
+
+function statusLabel(s: Settlement): string {
+  if (s.method === 'BANK_TRANSFER') {
+    return { CONFIRMED: '已确认（打款未发送）', SENT: '打款处理中', PAID: '已到账', FAILED: '打款失败' }[s.status];
+  }
+  return { CONFIRMED: '待发放', SENT: '发放中', PAID: '已发放', FAILED: '发放失败' }[s.status];
+}
 
 const STATUS_VARIANT: Record<SettlementStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   CONFIRMED: 'outline',
@@ -39,6 +46,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
   const [history, setHistory] = useState<Settlement[]>([]);
   const [target, setTarget] = useState<PendingCashback | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [method, setMethod] = useState<SettlementMethod>('BANK_TRANSFER');
   const [bank, setBank] = useState({ name: '', iban: '', bic: '', save: true });
 
   const reload = useCallback(async () => {
@@ -61,6 +69,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
   // Prefill synchronously from the auth context — an async fetch here could
   // resolve late and overwrite an IBAN the user is typing
   const openConfirm = (item: PendingCashback) => {
+    setMethod('BANK_TRANSFER');
     setBank({
       name: user?.bankAccountName ?? `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim(),
       iban: user?.bankIban ?? '',
@@ -72,7 +81,8 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
 
   const submit = async () => {
     if (!target) return;
-    if (!bank.name.trim() || !bank.iban.trim()) {
+    const isBank = method === 'BANK_TRANSFER';
+    if (isBank && (!bank.name.trim() || !bank.iban.trim())) {
       toast.error('请填写收款人姓名与 IBAN');
       return;
     }
@@ -80,13 +90,19 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
     try {
       const res = await settlementApi.confirm(accessToken, {
         invoiceId: target.id,
-        method: 'BANK_TRANSFER',
-        bankAccountName: bank.name.trim(),
-        bankIban: bank.iban.trim(),
-        bankBic: bank.bic.trim() || undefined,
-        saveBankInfo: bank.save,
+        method,
+        ...(isBank
+          ? {
+              bankAccountName: bank.name.trim(),
+              bankIban: bank.iban.trim(),
+              bankBic: bank.bic.trim() || undefined,
+              saveBankInfo: bank.save,
+            }
+          : {}),
       });
-      if (res.status === 'FAILED') {
+      if (!isBank) {
+        toast.success(`返点已确认，${METHOD_LABEL[method]}将由平台发放`);
+      } else if (res.status === 'FAILED') {
         toast.warning('返点已确认，但打款指令发送失败，可稍后在结算记录中重试');
       } else {
         toast.success('返点已确认，打款指令已发送');
@@ -159,15 +175,15 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
                 <div className="min-w-0">
                   <p className="truncate text-sm text-stone-700">{s.invoice.vendorName ?? '—'}</p>
                   <p className="text-xs text-stone-500">
-                    {new Date(s.confirmedAt).toLocaleDateString('zh-CN')} · 银行卡
+                    {new Date(s.confirmedAt).toLocaleDateString('zh-CN')} · {METHOD_LABEL[s.method]}
                     {s.bankIban && ` ····${s.bankIban.slice(-4)}`}
                     {s.status === 'FAILED' && s.failureReason && ` · ${s.failureReason}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-stone-700">€{Number(s.amount).toFixed(2)}</span>
-                  <Badge variant={STATUS_VARIANT[s.status]}>{STATUS_LABEL[s.status]}</Badge>
-                  {(s.status === 'FAILED' || s.status === 'CONFIRMED') && (
+                  <Badge variant={STATUS_VARIANT[s.status]}>{statusLabel(s)}</Badge>
+                  {s.method === 'BANK_TRANSFER' && (s.status === 'FAILED' || s.status === 'CONFIRMED') && (
                     <Button size="sm" variant="outline" onClick={() => retry(s.id)}>
                       {s.status === 'FAILED' ? '重试' : '发送打款'}
                     </Button>
@@ -196,11 +212,33 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
 
               <div>
                 <label className="mb-1.5 block text-xs text-muted">结算方式</label>
-                <div className="rounded border border-border px-3 py-2 text-sm text-stone-700">
-                  银行卡打款（自动到账）
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.keys(METHOD_LABEL) as SettlementMethod[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMethod(m)}
+                      className={`rounded border px-3 py-2 text-sm transition-colors ${
+                        method === m
+                          ? 'border-[#B8966E] bg-[#B8966E]/10 text-[#B8966E]'
+                          : 'border-border text-stone-600 hover:border-stone-300'
+                      }`}
+                    >
+                      {METHOD_LABEL[m]}
+                    </button>
+                  ))}
                 </div>
+                <p className="mt-1.5 text-xs text-muted">
+                  {method === 'BANK_TRANSFER'
+                    ? '自动打款至您的银行账户'
+                    : method === 'VOUCHER'
+                      ? '平台发放等额代金券，可抵扣合作商家消费'
+                      : '平台发放等额礼品券'}
+                </p>
               </div>
 
+              {method === 'BANK_TRANSFER' && (
+              <>
               <div>
                 <label className="mb-1.5 block text-xs text-muted">收款人姓名</label>
                 <input
@@ -234,6 +272,8 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
                 />
                 保存收款信息，下次自动填写
               </label>
+              </>
+              )}
             </div>
           )}
           <DialogFooter>
@@ -245,7 +285,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
               onClick={submit}
               style={{ backgroundColor: '#B8966E', color: 'white' }}
             >
-              {submitting ? '提交中…' : '确认并申请打款'}
+              {submitting ? '提交中…' : method === 'BANK_TRANSFER' ? '确认并申请打款' : '确认结算'}
             </Button>
           </DialogFooter>
         </DialogContent>

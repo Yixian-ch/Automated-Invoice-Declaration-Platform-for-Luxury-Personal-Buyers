@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
+import { SettlementStatus, UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -41,6 +41,23 @@ export class SettlementController {
   @Roles(UserRole.RESELLER, UserRole.ORG_ADMIN)
   retry(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.settlementService.retry(user.id, id);
+  }
+
+  /** Admin: all settlements (e.g. ?status=CONFIRMED for vouchers to issue) */
+  @Get('admin/all')
+  @Roles(UserRole.ADMIN, UserRole.REVIEWER)
+  listAll(@Query('status') status?: string) {
+    const valid = ['CONFIRMED', 'SENT', 'PAID', 'FAILED'];
+    return this.settlementService.listAll(
+      status && valid.includes(status) ? (status as SettlementStatus) : undefined,
+    );
+  }
+
+  /** Admin: mark a manually issued voucher / gift card as delivered */
+  @Post(':id/fulfill')
+  @Roles(UserRole.ADMIN)
+  fulfill(@Param('id') id: string) {
+    return this.settlementService.fulfill(id);
   }
 
   /** Partner payment company notifies the payout outcome */

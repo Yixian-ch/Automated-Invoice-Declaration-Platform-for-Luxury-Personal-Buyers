@@ -233,11 +233,13 @@ export type PendingCashback = {
 
 export type SettlementStatus = 'CONFIRMED' | 'SENT' | 'PAID' | 'FAILED';
 
+export type SettlementMethod = 'BANK_TRANSFER' | 'VOUCHER' | 'GIFT_CARD';
+
 export type Settlement = {
   id: string;
   invoiceId: string;
   amount: string;
-  method: 'BANK_TRANSFER';
+  method: SettlementMethod;
   status: SettlementStatus;
   bankIban: string | null;
   failureReason: string | null;
@@ -249,9 +251,9 @@ export type Settlement = {
 
 export type ConfirmSettlementPayload = {
   invoiceId: string;
-  method: 'BANK_TRANSFER';
-  bankAccountName: string;
-  bankIban: string;
+  method: SettlementMethod;
+  bankAccountName?: string;
+  bankIban?: string;
   bankBic?: string;
   saveBankInfo?: boolean;
 };

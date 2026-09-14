@@ -251,6 +251,8 @@ enum InviteCodeStatus {
 
 enum SettlementMethod {
   BANK_TRANSFER
+  VOUCHER
+  GIFT_CARD
 }
 
 enum SettlementStatus {
