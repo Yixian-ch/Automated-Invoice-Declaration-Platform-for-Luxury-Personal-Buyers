@@ -1,19 +1,19 @@
 /**
- * Development seed — creates test accounts for every role and KYC state.
+ * Development seed — creates test accounts for every role.
  * Run: npm run prisma:seed
  *
  * All test passwords: Test1234!
  *
  * Accounts created:
  *   admin@lidp.dev          ADMIN         — platform administrator
- *   alice@lidp.dev          RESELLER      — KYC APPROVED
- *   bob@lidp.dev            RESELLER      — self-registered, KYC PENDING
- *   carol@lidp.dev          RESELLER      — self-registered, KYC + KYB APPROVED
- *   dave@lidp.dev           RESELLER      — fresh, KYC NOT_STARTED
- *   orgadmin@lidp.dev       ORG_ADMIN     — org admin, KYC APPROVED
+ *   alice@lidp.dev          RESELLER
+ *   bob@lidp.dev            RESELLER
+ *   carol@lidp.dev          RESELLER
+ *   dave@lidp.dev           RESELLER
+ *   orgadmin@lidp.dev       ORG_ADMIN
  */
 
-import { PrismaClient, UserRole, UserStatus, AccountType, KycStatus, KybStatus } from '@prisma/client';
+import { PrismaClient, UserRole, UserStatus, AccountType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -34,7 +34,6 @@ async function main() {
         name: 'Acme Luxury SAS',
         registrationNo: 'FR123456789',
         country: 'FR',
-        kybStatus: KybStatus.APPROVED,
       },
     });
   }
@@ -51,12 +50,10 @@ async function main() {
       role: UserRole.ADMIN,
       status: UserStatus.ACTIVE,
       accountType: AccountType.INDIVIDUAL,
-      kycStatus: KycStatus.APPROVED,
-      kybStatus: KybStatus.NOT_STARTED,
     },
   });
 
-  // ── Alice — reseller, KYC approved ───────────────────────
+  // ── Alice — reseller
   await prisma.user.upsert({
     where: { email: 'alice@lidp.dev' },
     update: {},
@@ -68,12 +65,10 @@ async function main() {
       role: UserRole.RESELLER,
       status: UserStatus.ACTIVE,
       accountType: AccountType.INDIVIDUAL,
-      kycStatus: KycStatus.APPROVED,
-      kybStatus: KybStatus.NOT_STARTED,
     },
   });
 
-  // ── Bob — self-registered reseller, KYC pending ─────────────────────────────
+  // ── Bob — self-registered reseller
   await prisma.user.upsert({
     where: { email: 'bob@lidp.dev' },
     update: {},
@@ -85,14 +80,10 @@ async function main() {
       role: UserRole.RESELLER,
       status: UserStatus.REGISTERED,
       accountType: AccountType.INDIVIDUAL,
-      kycStatus: KycStatus.PENDING,
-      kybStatus: KybStatus.PENDING,
-      diditKycSessionId: 'seed-pending-kyc',
-      diditKybSessionId: 'seed-pending-kyb',
     },
   });
 
-  // ── Carol — self-registered, KYC + KYB both approved ───────────────────────
+  // ── Carol
   await prisma.user.upsert({
     where: { email: 'carol@lidp.dev' },
     update: {},
@@ -104,8 +95,6 @@ async function main() {
       role: UserRole.RESELLER,
       status: UserStatus.ACTIVE,
       accountType: AccountType.INDIVIDUAL,
-      kycStatus: KycStatus.APPROVED,
-      kybStatus: KybStatus.APPROVED,
     },
   });
 
@@ -121,8 +110,6 @@ async function main() {
       role: UserRole.RESELLER,
       status: UserStatus.REGISTERED,
       accountType: AccountType.INDIVIDUAL,
-      kycStatus: KycStatus.NOT_STARTED,
-      kybStatus: KybStatus.NOT_STARTED,
     },
   });
 
@@ -138,8 +125,6 @@ async function main() {
       role: UserRole.ORG_ADMIN,
       status: UserStatus.ACTIVE,
       accountType: AccountType.ORGANIZATION,
-      kycStatus: KycStatus.APPROVED,
-      kybStatus: KybStatus.APPROVED,
       organizationId: org.id,
     },
   });
@@ -148,11 +133,11 @@ async function main() {
 ✓ Seed complete — test accounts (password: ${PASSWORD})
 
   admin@lidp.dev      ADMIN          active
-  alice@lidp.dev      RESELLER       KYC approved
-  bob@lidp.dev        RESELLER       KYC+KYB pending (self-registered)
-  carol@lidp.dev      RESELLER       KYC+KYB approved (self-registered)
+  alice@lidp.dev      RESELLER
+  bob@lidp.dev        RESELLER
+  carol@lidp.dev      RESELLER
   dave@lidp.dev       RESELLER       not started
-  orgadmin@lidp.dev   ORG_ADMIN      KYC+KYB approved / org: ${org.name}
+  orgadmin@lidp.dev   ORG_ADMIN
 `);
 }
 

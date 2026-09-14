@@ -158,8 +158,8 @@ export default function ProfilePage() {
           email: p.email ?? '',
           address: p.address ?? '',
         });
-        if (p.kycDocumentKey) loadDocument('passport');
-        if (p.kybDocumentKey) loadDocument('business-license');
+        if (p.passportDocumentKey) loadDocument('passport');
+        if (p.businessLicenseKey) loadDocument('business-license');
       })
       .catch(() => toast.error('加载个人信息失败'));
   }, [accessToken, loadDocument]);

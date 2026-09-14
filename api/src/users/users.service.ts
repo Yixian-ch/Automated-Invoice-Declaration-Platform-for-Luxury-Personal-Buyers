@@ -46,7 +46,7 @@ export class UsersService {
   async getProfile(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: { organization: { select: { id: true, name: true, kybStatus: true } } },
+      include: { organization: { select: { id: true, name: true } } },
     });
     if (!user) throw new NotFoundException('User not found');
     return this.sanitize(user);
@@ -100,7 +100,7 @@ export class UsersService {
   }
 
   private documentField(type: ProfileDocumentType) {
-    return type === 'passport' ? ('kycDocumentKey' as const) : ('kybDocumentKey' as const);
+    return type === 'passport' ? ('passportDocumentKey' as const) : ('businessLicenseKey' as const);
   }
 
   async saveDocument(id: string, type: ProfileDocumentType, buffer: Buffer, mimeType: string) {
@@ -110,7 +110,7 @@ export class UsersService {
     const field = this.documentField(type);
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id },
-      select: { kycDocumentKey: true, kybDocumentKey: true, role: true },
+      select: { passportDocumentKey: true, businessLicenseKey: true, role: true },
     });
 
     // Write the new file and point the DB at it before touching the old one,
@@ -143,7 +143,7 @@ export class UsersService {
     const field = this.documentField(type);
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id },
-      select: { kycDocumentKey: true, kybDocumentKey: true },
+      select: { passportDocumentKey: true, businessLicenseKey: true },
     });
     const key = user[field];
     if (!key || !this.storage.fileExists(key)) {

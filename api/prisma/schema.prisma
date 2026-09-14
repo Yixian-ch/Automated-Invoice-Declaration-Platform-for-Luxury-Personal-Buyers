@@ -12,12 +12,10 @@ model Organization {
   name              String
   registrationNo    String?
   country           String       @default("FR")
-  kybStatus         KybStatus    @default(NOT_STARTED)
   cashbackRate      Decimal      @default(0) @db.Decimal(5, 4)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   deletedAt         DateTime?
-  diditKybSessionId String?
   auditLogs         AuditLog[]
   inviteCodes       InviteCode[]
   invoices          Invoice[]
@@ -37,10 +35,6 @@ model User {
   role                   UserRole      @default(RESELLER)
   status                 UserStatus    @default(REGISTERED)
   accountType            AccountType   @default(INDIVIDUAL)
-  kycStatus              KycStatus     @default(NOT_STARTED)
-  kycDocumentExpiresAt   DateTime?
-  kybStatus              KybStatus     @default(NOT_STARTED)
-  kybDocumentExpiresAt   DateTime?
   cashbackRate           Decimal?      @db.Decimal(5, 4)
   organizationId         String?
   refreshTokenHash       String?
@@ -57,11 +51,9 @@ model User {
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
   deletedAt              DateTime?
-  diditKybSessionId      String?
-  diditKycSessionId      String?
   registeredViaInvite    Boolean       @default(false)
-  kycDocumentKey         String?
-  kybDocumentKey         String?
+  passportDocumentKey    String?
+  businessLicenseKey     String?
   address                String?
   auditLogs              AuditLog[]
   invoices               Invoice[]
@@ -213,27 +205,8 @@ enum AccountType {
   ORGANIZATION
 }
 
-enum KycStatus {
-  NOT_STARTED
-  PENDING
-  APPROVED
-  FAILED
-  EXPIRING
-  EXPIRED
-}
-
-enum KybStatus {
-  NOT_STARTED
-  PENDING
-  APPROVED
-  FAILED
-  EXPIRING
-  EXPIRED
-}
-
 enum UserStatus {
   REGISTERED
-  KYC_PENDING
   ACTIVE
   SUSPENDED
   BLACKLISTED
