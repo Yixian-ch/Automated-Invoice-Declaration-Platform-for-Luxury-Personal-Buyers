@@ -24,4 +24,19 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(300)
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  bankAccountName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(34)
+  bankIban?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(11)
+  bankBic?: string;
 }

@@ -101,6 +101,9 @@ export default function ProfilePage() {
     phone: '',
     email: '',
     address: '',
+    bankAccountName: '',
+    bankIban: '',
+    bankBic: '',
   });
   const [docs, setDocs] = useState<Record<ProfileDocumentType, DocState>>({
     passport: EMPTY_DOC,
@@ -157,6 +160,9 @@ export default function ProfilePage() {
           phone: p.phone ?? '',
           email: p.email ?? '',
           address: p.address ?? '',
+          bankAccountName: p.bankAccountName ?? '',
+          bankIban: p.bankIban ?? '',
+          bankBic: p.bankBic ?? '',
         });
         if (p.passportDocumentKey) loadDocument('passport');
         if (p.businessLicenseKey) loadDocument('business-license');
@@ -176,6 +182,9 @@ export default function ProfilePage() {
         phone: form.phone.trim(),
         email: form.email.trim(),
         address: form.address.trim(),
+        bankAccountName: form.bankAccountName.trim(),
+        bankIban: form.bankIban.trim(),
+        bankBic: form.bankBic.trim(),
       };
       const payload = Object.fromEntries(
         Object.entries(trimmed).filter(([, v]) => v !== ''),
@@ -227,6 +236,9 @@ export default function ProfilePage() {
     { key: 'phone', label: '电话', type: 'tel' },
     { key: 'email', label: '邮箱', type: 'email' },
     { key: 'address', label: '地址' },
+    { key: 'bankAccountName', label: '收款人姓名' },
+    { key: 'bankIban', label: 'IBAN（返点收款账户）' },
+    { key: 'bankBic', label: 'BIC（可选）' },
   ];
 
   return (
@@ -256,7 +268,7 @@ export default function ProfilePage() {
           <p className="text-xs tracking-widest uppercase text-muted">基本信息</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {fields.map((f) => (
-              <div key={f.key} className={f.key === 'address' ? 'sm:col-span-2' : ''}>
+              <div key={f.key} className={f.key === 'address' || f.key === 'bankIban' ? 'sm:col-span-2' : ''}>
                 <label className="block text-xs text-muted mb-1.5">{f.label}</label>
                 <input
                   type={f.type ?? 'text'}

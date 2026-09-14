@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { invoiceApi, type Invoice } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SettlementSection } from '@/components/settlement-section';
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: '待审核',
@@ -121,6 +122,9 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+
+        {/* 返点确认与结算 */}
+        {accessToken && <SettlementSection accessToken={accessToken} />}
 
         {/* 小票列表 */}
         <div className="card-luxury">
