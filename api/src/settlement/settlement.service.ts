@@ -83,13 +83,15 @@ export class SettlementService {
     if (!amount || Number(amount) <= 0) {
       throw new BadRequestException('该小票没有可结算的返点');
     }
+    const isBank = dto.method === 'BANK_TRANSFER';
+
     // Cashback is computed in the invoice currency but the payout order is
     // wired in EUR — refuse rather than pay the wrong amount
-    if (invoice.currency && invoice.currency !== 'EUR') {
+    if (isBank && invoice.currency && invoice.currency !== 'EUR') {
       throw new BadRequestException('目前仅支持欧元（EUR）小票的自动打款，请联系客服处理');
     }
 
-    const iban = dto.bankIban.replace(/\s+/g, '').toUpperCase();
+    const iban = isBank ? dto.bankIban!.replace(/\s+/g, '').toUpperCase() : null;
 
     let settlement;
     try {
@@ -100,16 +102,16 @@ export class SettlementService {
             userId,
             amount,
             method: dto.method,
-            bankAccountName: dto.bankAccountName.trim(),
+            bankAccountName: isBank ? dto.bankAccountName!.trim() : null,
             bankIban: iban,
-            bankBic: dto.bankBic?.trim() || null,
+            bankBic: isBank ? dto.bankBic?.trim() || null : null,
           },
         });
-        if (dto.saveBankInfo) {
+        if (isBank && dto.saveBankInfo) {
           await tx.user.update({
             where: { id: userId },
             data: {
-              bankAccountName: dto.bankAccountName.trim(),
+              bankAccountName: dto.bankAccountName!.trim(),
               bankIban: iban,
               bankBic: dto.bankBic?.trim() || null,
             },
@@ -135,7 +137,42 @@ export class SettlementService {
       throw err;
     }
 
+    // Vouchers and gift cards are issued manually — the settlement stays
+    // CONFIRMED (待发放) until an admin fulfills it
+    if (!isBank) return settlement;
+
     return this.dispatchPayout(settlement.id);
+  }
+
+  /** Admin overview of all settlements, optionally filtered by status */
+  async listAll(status?: SettlementStatus) {
+    return this.prisma.cashbackSettlement.findMany({
+      where: status ? { status } : undefined,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        invoice: { select: { vendorName: true, purchaseDate: true, grandTotalAmount: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
+
+  /** Admin marks a manually issued voucher / gift card as delivered */
+  async fulfill(settlementId: string) {
+    const settlement = await this.prisma.cashbackSettlement.findUnique({
+      where: { id: settlementId },
+    });
+    if (!settlement) throw new NotFoundException('结算记录不存在');
+    if (settlement.method === 'BANK_TRANSFER') {
+      throw new BadRequestException('银行卡打款由合作方回调确认，不能手动标记');
+    }
+    if (settlement.status !== SettlementStatus.CONFIRMED) {
+      throw new BadRequestException('只有待发放的结算可以标记为已发放');
+    }
+    return this.prisma.cashbackSettlement.update({
+      where: { id: settlementId },
+      data: { status: SettlementStatus.PAID, paidAt: new Date() },
+    });
   }
 
   /**
@@ -147,6 +184,8 @@ export class SettlementService {
     const settlement = await this.prisma.cashbackSettlement.findUniqueOrThrow({
       where: { id: settlementId },
     });
+    // Only bank transfers ever go to the payout partner
+    if (settlement.method !== 'BANK_TRANSFER') return settlement;
     // Only CONFIRMED (never sent / crashed before send) and FAILED may dispatch
     if (
       settlement.status !== SettlementStatus.CONFIRMED &&
@@ -197,6 +236,9 @@ export class SettlementService {
     });
     if (!settlement) throw new NotFoundException('结算记录不存在');
     if (settlement.userId !== userId) throw new ForbiddenException();
+    if (settlement.method !== 'BANK_TRANSFER') {
+      throw new BadRequestException('代金券/礼品券由平台发放，无需重新发送');
+    }
     if (
       settlement.status !== SettlementStatus.FAILED &&
       settlement.status !== SettlementStatus.CONFIRMED
