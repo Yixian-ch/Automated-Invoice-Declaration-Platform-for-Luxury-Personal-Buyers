@@ -57,6 +57,20 @@ export type UserProfile = {
   role: string;
   status: string;
   locale: string;
+  phone: string | null;
+  address: string | null;
+  kycDocumentKey: string | null;
+  kybDocumentKey: string | null;
+};
+
+export type ProfileDocumentType = 'passport' | 'business-license';
+
+export type UpdateProfilePayload = {
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
 };
 
 export const authApi = {
@@ -75,6 +89,49 @@ export const authApi = {
   me: (token: string) =>
     request<UserProfile>('/users/me', { token }),
 
+};
+
+// ─── User profile ─────────────────────────────────────────────────────────────
+
+export const userApi = {
+  updateProfile: (token: string, data: UpdateProfilePayload) =>
+    request<UserProfile>('/users/me', { method: 'PATCH', body: data, token }),
+
+  /** Upload a profile document (multipart POST) */
+  uploadDocument: async (
+    token: string,
+    type: ProfileDocumentType,
+    file: File,
+  ): Promise<{ type: string; uploaded: boolean }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/api/v1/users/me/documents/${type}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error((error as { message: string }).message ?? '上传失败');
+    }
+    return res.json();
+  },
+
+  /** Fetch a profile document as a blob URL (null when none uploaded) */
+  fetchDocumentUrl: async (
+    token: string,
+    type: ProfileDocumentType,
+  ): Promise<{ url: string; mimeType: string } | null> => {
+    const res = await fetch(`${API_BASE}/api/v1/users/me/documents/${type}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error('文档加载失败');
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), mimeType: blob.type };
+  },
 };
 
 
