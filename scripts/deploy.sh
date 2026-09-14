@@ -1,0 +1,53 @@
+#!/bin/bash
+# Production deploy — run ON THE SERVER (invoked by GitHub Actions over SSH,
+# or manually). Pulls latest main, rebuilds images, restarts containers.
+# The api container applies pending Prisma migrations itself on startup
+# (see api/Dockerfile CMD: prisma migrate deploy).
+set -euo pipefail
+
+REPO_DIR="${DEPLOY_PATH:-$(cd "$(dirname "$0")/.." && pwd)}"
+COMPOSE="docker compose -f docker-compose.prod.yml"
+LOCK="/tmp/ruichi-deploy.lock"
+
+cd "$REPO_DIR"
+
+# Serialize deploys — a second push during a running deploy waits its turn
+exec 9>"$LOCK"
+flock 9
+
+echo "[deploy] $(date -Is) — fetching origin/main"
+git fetch origin main
+BEFORE=$(git rev-parse HEAD)
+git reset --hard origin/main
+AFTER=$(git rev-parse HEAD)
+echo "[deploy] ${BEFORE:0:7} → ${AFTER:0:7}"
+
+if [ "$BEFORE" = "$AFTER" ] && [ "${FORCE:-}" != "1" ]; then
+  echo "[deploy] already up to date — nothing to do (FORCE=1 to redeploy anyway)"
+  exit 0
+fi
+
+echo "[deploy] building images"
+$COMPOSE build --pull api web
+
+echo "[deploy] restarting containers (api runs prisma migrate deploy on start)"
+$COMPOSE up -d
+
+echo "[deploy] waiting for api health"
+for i in $(seq 1 30); do
+  if docker exec lidp_api wget -qO- http://localhost:3001/api/v1 >/dev/null 2>&1 \
+     || [ "$(docker inspect -f '{{.State.Status}}' lidp_api 2>/dev/null)" = "running" ]; then
+    sleep 5
+    if [ "$(docker inspect -f '{{.State.Status}}' lidp_api)" = "running" ]; then
+      echo "[deploy] api is running"
+      break
+    fi
+  fi
+  [ "$i" = 30 ] && { echo "[deploy] ERROR: api container not healthy"; docker logs --tail 50 lidp_api; exit 1; }
+  sleep 2
+done
+
+echo "[deploy] pruning dangling images"
+docker image prune -f >/dev/null
+
+echo "[deploy] done — deployed ${AFTER:0:7}"
