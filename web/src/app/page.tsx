@@ -70,8 +70,8 @@ export default function HomePage() {
           <Link href="/mentions-legales" className="transition-colors hover:text-ink">
             Mentions légales
           </Link>
-          <Link href="/rgpd-application-mobile" className="transition-colors hover:text-ink">
-            RGPD – Confidentialité de l&rsquo;application mobile Luxe for Guide
+          <Link href="/rgpd-application" className="transition-colors hover:text-ink">
+            RGPD – Confidentialité de l&rsquo;application Ruichi
           </Link>
           <Link href="/politique-de-confidentialite" className="transition-colors hover:text-ink">
             Politique de confidentialité
