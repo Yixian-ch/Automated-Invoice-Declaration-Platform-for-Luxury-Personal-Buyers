@@ -61,6 +61,9 @@ export type UserProfile = {
   address: string | null;
   passportDocumentKey: string | null;
   businessLicenseKey: string | null;
+  bankAccountName: string | null;
+  bankIban: string | null;
+  bankBic: string | null;
 };
 
 export type ProfileDocumentType = 'passport' | 'business-license';
@@ -71,6 +74,9 @@ export type UpdateProfilePayload = {
   phone?: string;
   email?: string;
   address?: string;
+  bankAccountName?: string;
+  bankIban?: string;
+  bankBic?: string;
 };
 
 export const authApi = {
@@ -212,6 +218,58 @@ export const invoiceApi = {
   /** Get single invoice */
   get: (invoiceId: string, token: string) =>
     request<Invoice>(`/invoices/${invoiceId}`, { token }),
+};
+
+// ─── Cashback settlements ─────────────────────────────────────────────────────
+
+export type PendingCashback = {
+  id: string;
+  vendorName: string | null;
+  purchaseDate: string | null;
+  grandTotalAmount: string | null;
+  cashbackAmount: string;
+  currency: string | null;
+};
+
+export type SettlementStatus = 'CONFIRMED' | 'SENT' | 'PAID' | 'FAILED';
+
+export type Settlement = {
+  id: string;
+  invoiceId: string;
+  amount: string;
+  method: 'BANK_TRANSFER';
+  status: SettlementStatus;
+  bankIban: string | null;
+  failureReason: string | null;
+  confirmedAt: string;
+  sentAt: string | null;
+  paidAt: string | null;
+  invoice: { vendorName: string | null; purchaseDate: string | null; grandTotalAmount: string | null };
+};
+
+export type ConfirmSettlementPayload = {
+  invoiceId: string;
+  method: 'BANK_TRANSFER';
+  bankAccountName: string;
+  bankIban: string;
+  bankBic?: string;
+  saveBankInfo?: boolean;
+};
+
+export const settlementApi = {
+  /** Approved invoices awaiting cashback confirmation */
+  pending: (token: string) => request<PendingCashback[]>('/settlements/pending', { token }),
+
+  /** Settlement history */
+  mine: (token: string) => request<Settlement[]>('/settlements/mine', { token }),
+
+  /** Confirm cashback + trigger automatic payout */
+  confirm: (token: string, data: ConfirmSettlementPayload) =>
+    request<Settlement>('/settlements', { method: 'POST', body: data, token }),
+
+  /** Retry a failed payout */
+  retry: (token: string, settlementId: string) =>
+    request<Settlement>(`/settlements/${settlementId}/retry`, { method: 'POST', token }),
 };
 
 // ─── Admin ────────────────────────────────────────────────────────────────────

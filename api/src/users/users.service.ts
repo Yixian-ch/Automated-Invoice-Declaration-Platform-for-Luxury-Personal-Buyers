@@ -70,6 +70,9 @@ export class UsersService {
             phone: dto.phone,
             email: dto.email,
             address: dto.address,
+            bankAccountName: dto.bankAccountName,
+            bankIban: dto.bankIban?.replace(/\s+/g, '').toUpperCase(),
+            bankBic: dto.bankBic,
           },
         });
         await tx.auditLog.create({
