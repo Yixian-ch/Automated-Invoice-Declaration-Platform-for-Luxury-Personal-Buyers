@@ -32,7 +32,9 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           echo "Connecting as $SSH_USER (port $SSH_PORT)..."
+          # Pull first so the deploy script itself arrives with the code,
+          # then hand over to it (its own fetch/reset is a harmless no-op)
           ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" \
             -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
             "$SSH_USER@$SSH_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' bash '$DEPLOY_PATH/scripts/deploy.sh'"
+            "set -e; cd '$DEPLOY_PATH'; git fetch origin main; git reset --hard origin/main; DEPLOY_PATH='$DEPLOY_PATH' bash scripts/deploy.sh"
