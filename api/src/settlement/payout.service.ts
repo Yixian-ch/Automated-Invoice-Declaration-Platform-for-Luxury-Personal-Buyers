@@ -52,8 +52,12 @@ export class PayoutService {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
+          // Same settlement always sends the same key, so the partner can
+          // dedupe a retry of an order it already accepted
+          'Idempotency-Key': req.settlementId,
         },
         body: JSON.stringify(req),
+        signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');

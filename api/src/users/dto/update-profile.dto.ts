@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -32,7 +32,8 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(34)
+  @MaxLength(42)
+  @Matches(/^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{10,40}$/i, { message: 'IBAN 格式不正确' })
   bankIban?: string;
 
   @IsOptional()

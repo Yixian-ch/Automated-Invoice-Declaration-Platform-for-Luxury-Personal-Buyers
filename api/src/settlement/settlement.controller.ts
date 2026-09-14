@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -7,6 +8,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SettlementService } from './settlement.service';
 import { ConfirmSettlementDto } from './dto/confirm-settlement.dto';
+import { PartnerCallbackDto } from './dto/partner-callback.dto';
 
 @Controller('settlements')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -44,9 +46,10 @@ export class SettlementController {
   /** Partner payment company notifies the payout outcome */
   @Post('callback')
   @Public()
+  @UseGuards(ThrottlerGuard)
   callback(
     @Headers('x-payout-secret') secret: string | undefined,
-    @Body() body: { settlementId?: string; partnerRef?: string; status: string; reason?: string },
+    @Body() body: PartnerCallbackDto,
   ) {
     return this.settlementService.handlePartnerCallback(secret, body);
   }

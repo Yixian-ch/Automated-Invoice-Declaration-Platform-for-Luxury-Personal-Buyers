@@ -8,10 +8,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { timingSafeEqual } from 'crypto';
 import { InvoiceStatus, SettlementStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayoutService } from './payout.service';
 import { ConfirmSettlementDto } from './dto/confirm-settlement.dto';
+import { PartnerCallbackDto } from './dto/partner-callback.dto';
 
 @Injectable()
 export class SettlementService {
@@ -63,7 +65,14 @@ export class SettlementService {
   async confirm(userId: string, dto: ConfirmSettlementDto) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: dto.invoiceId },
-      select: { id: true, userId: true, status: true, cashbackAmount: true, deletedAt: true },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        cashbackAmount: true,
+        currency: true,
+        deletedAt: true,
+      },
     });
     if (!invoice || invoice.deletedAt) throw new NotFoundException('小票不存在');
     if (invoice.userId !== userId) throw new ForbiddenException();
@@ -73,6 +82,11 @@ export class SettlementService {
     const amount = invoice.cashbackAmount;
     if (!amount || Number(amount) <= 0) {
       throw new BadRequestException('该小票没有可结算的返点');
+    }
+    // Cashback is computed in the invoice currency but the payout order is
+    // wired in EUR — refuse rather than pay the wrong amount
+    if (invoice.currency && invoice.currency !== 'EUR') {
+      throw new BadRequestException('目前仅支持欧元（EUR）小票的自动打款，请联系客服处理');
     }
 
     const iban = dto.bankIban.replace(/\s+/g, '').toUpperCase();
@@ -124,12 +138,22 @@ export class SettlementService {
     return this.dispatchPayout(settlement.id);
   }
 
-  /** Push (or re-push) the payout order to the partner company */
+  /**
+   * Push (or re-push) the payout order to the partner company.
+   * Status transitions are guarded so a partner webhook landing mid-flight
+   * (they pay as soon as they receive the data) is never overwritten.
+   */
   async dispatchPayout(settlementId: string) {
     const settlement = await this.prisma.cashbackSettlement.findUniqueOrThrow({
       where: { id: settlementId },
     });
-    if (settlement.status === SettlementStatus.PAID) return settlement;
+    // Only CONFIRMED (never sent / crashed before send) and FAILED may dispatch
+    if (
+      settlement.status !== SettlementStatus.CONFIRMED &&
+      settlement.status !== SettlementStatus.FAILED
+    ) {
+      return settlement;
+    }
 
     const result = await this.payout.sendPayout({
       settlementId: settlement.id,
@@ -141,53 +165,82 @@ export class SettlementService {
       reference: `RUICHI-${settlement.id.slice(0, 8).toUpperCase()}`,
     });
 
-    return this.prisma.cashbackSettlement.update({
-      where: { id: settlement.id },
+    // Guarded write: if the webhook already moved this settlement to a
+    // terminal state, leave it alone and return the current row
+    await this.prisma.cashbackSettlement.updateMany({
+      where: {
+        id: settlement.id,
+        status: { in: [SettlementStatus.CONFIRMED, SettlementStatus.FAILED] },
+        paidAt: null,
+      },
       data: result.ok
         ? {
             status: SettlementStatus.SENT,
             sentAt: new Date(),
-            partnerRef: result.partnerRef ?? null,
+            // keep the first partnerRef if the retry response has none
+            ...(result.partnerRef ? { partnerRef: result.partnerRef } : {}),
             failureReason: null,
           }
         : { status: SettlementStatus.FAILED, failureReason: result.error ?? 'Unknown error' },
     });
+
+    return this.prisma.cashbackSettlement.findUniqueOrThrow({ where: { id: settlement.id } });
   }
 
-  /** Owner retries a failed payout */
+  /**
+   * Owner re-sends the payout order. Covers FAILED sends and CONFIRMED rows
+   * stranded by a crash between confirmation and dispatch.
+   */
   async retry(userId: string, settlementId: string) {
     const settlement = await this.prisma.cashbackSettlement.findUnique({
       where: { id: settlementId },
     });
     if (!settlement) throw new NotFoundException('结算记录不存在');
     if (settlement.userId !== userId) throw new ForbiddenException();
-    if (settlement.status !== SettlementStatus.FAILED) {
-      throw new BadRequestException('只有失败的打款可以重试');
+    if (
+      settlement.status !== SettlementStatus.FAILED &&
+      settlement.status !== SettlementStatus.CONFIRMED
+    ) {
+      throw new BadRequestException('该结算不需要重新发送打款');
     }
     return this.dispatchPayout(settlementId);
   }
 
   /** Partner webhook: payment executed or definitively failed */
-  async handlePartnerCallback(
-    secret: string | undefined,
-    body: { settlementId?: string; partnerRef?: string; status: string; reason?: string },
-  ) {
+  async handlePartnerCallback(secret: string | undefined, body: PartnerCallbackDto) {
     const expected = this.config.get<string>('PAYOUT_WEBHOOK_SECRET');
-    if (!expected || secret !== expected) throw new UnauthorizedException();
+    const provided = Buffer.from(secret ?? '');
+    const wanted = Buffer.from(expected ?? '');
+    if (!expected || provided.length !== wanted.length || !timingSafeEqual(provided, wanted)) {
+      throw new UnauthorizedException();
+    }
 
+    // Exactly one identifier must be present — an empty body must never
+    // match an arbitrary row
+    if (!body.settlementId && !body.partnerRef) {
+      throw new BadRequestException('settlementId or partnerRef is required');
+    }
     const settlement = await this.prisma.cashbackSettlement.findFirst({
       where: body.settlementId ? { id: body.settlementId } : { partnerRef: body.partnerRef },
     });
     if (!settlement) throw new NotFoundException('Settlement not found');
 
-    const paid = body.status === 'paid';
-    const updated = await this.prisma.cashbackSettlement.update({
-      where: { id: settlement.id },
-      data: paid
-        ? { status: SettlementStatus.PAID, paidAt: new Date(), failureReason: null }
-        : { status: SettlementStatus.FAILED, failureReason: body.reason ?? 'Rejected by partner' },
-    });
-    this.logger.log(`Partner callback: settlement ${settlement.id} → ${updated.status}`);
+    if (body.status === 'paid') {
+      await this.prisma.cashbackSettlement.updateMany({
+        where: { id: settlement.id, status: { not: SettlementStatus.PAID } },
+        data: { status: SettlementStatus.PAID, paidAt: new Date(), failureReason: null },
+      });
+    } else {
+      // Never regress a settlement the partner already reported as paid
+      await this.prisma.cashbackSettlement.updateMany({
+        where: { id: settlement.id, status: { not: SettlementStatus.PAID } },
+        data: {
+          status: SettlementStatus.FAILED,
+          failureReason: body.reason ?? 'Rejected by partner',
+        },
+      });
+    }
+    this.logger.log(`Partner callback: settlement ${settlement.id} → ${body.status}`);
     return { ok: true };
   }
 }

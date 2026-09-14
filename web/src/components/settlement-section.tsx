@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '@/lib/auth-context';
 import {
-  authApi,
   settlementApi,
   type PendingCashback,
   type Settlement,
@@ -20,7 +20,7 @@ import {
 import { toast } from 'sonner';
 
 const STATUS_LABEL: Record<SettlementStatus, string> = {
-  CONFIRMED: '已确认',
+  CONFIRMED: '已确认（打款未发送）',
   SENT: '打款处理中',
   PAID: '已到账',
   FAILED: '打款失败',
@@ -34,6 +34,7 @@ const STATUS_VARIANT: Record<SettlementStatus, 'default' | 'secondary' | 'destru
 };
 
 export function SettlementSection({ accessToken }: { accessToken: string }) {
+  const { user } = useAuth();
   const [pending, setPending] = useState<PendingCashback[]>([]);
   const [history, setHistory] = useState<Settlement[]>([]);
   const [target, setTarget] = useState<PendingCashback | null>(null);
@@ -57,19 +58,16 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
     reload();
   }, [reload]);
 
-  const openConfirm = async (item: PendingCashback) => {
+  // Prefill synchronously from the auth context — an async fetch here could
+  // resolve late and overwrite an IBAN the user is typing
+  const openConfirm = (item: PendingCashback) => {
+    setBank({
+      name: user?.bankAccountName ?? `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim(),
+      iban: user?.bankIban ?? '',
+      bic: user?.bankBic ?? '',
+      save: true,
+    });
     setTarget(item);
-    try {
-      const me = await authApi.me(accessToken);
-      setBank({
-        name: me.bankAccountName ?? `${me.firstName} ${me.lastName}`.trim(),
-        iban: me.bankIban ?? '',
-        bic: me.bankBic ?? '',
-        save: true,
-      });
-    } catch {
-      /* keep manual entry */
-    }
   };
 
   const submit = async () => {
@@ -169,9 +167,9 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-stone-700">€{Number(s.amount).toFixed(2)}</span>
                   <Badge variant={STATUS_VARIANT[s.status]}>{STATUS_LABEL[s.status]}</Badge>
-                  {s.status === 'FAILED' && (
+                  {(s.status === 'FAILED' || s.status === 'CONFIRMED') && (
                     <Button size="sm" variant="outline" onClick={() => retry(s.id)}>
-                      重试
+                      {s.status === 'FAILED' ? '重试' : '发送打款'}
                     </Button>
                   )}
                 </div>
