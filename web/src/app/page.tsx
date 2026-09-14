@@ -60,6 +60,24 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {/* ── Footer — liens légaux ──────────────────────────────── */}
+      <footer className="relative z-10 px-6 pb-8 sm:px-10">
+        <nav className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-ink/50">
+          <Link href="/conditions-utilisation" className="transition-colors hover:text-ink">
+            Conditions d&rsquo;utilisation
+          </Link>
+          <Link href="/mentions-legales" className="transition-colors hover:text-ink">
+            Mentions légales
+          </Link>
+          <Link href="/rgpd-application-mobile" className="transition-colors hover:text-ink">
+            RGPD – Confidentialité de l&rsquo;application mobile Luxe for Guide
+          </Link>
+          <Link href="/politique-de-confidentialite" className="transition-colors hover:text-ink">
+            Politique de confidentialité
+          </Link>
+        </nav>
+      </footer>
     </main>
   );
 }
