@@ -6,7 +6,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { InvoiceModule } from './invoice/invoice.module';
-import { MailModule } from './mail/mail.module';
 import { AdminModule } from './admin/admin.module';
 
 @Module({
@@ -56,7 +55,6 @@ import { AdminModule } from './admin/admin.module';
     AuthModule,
     UsersModule,
     InvoiceModule,
-    MailModule,
     AdminModule,
   ],
 })

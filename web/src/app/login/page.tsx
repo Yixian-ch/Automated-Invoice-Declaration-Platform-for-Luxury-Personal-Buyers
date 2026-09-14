@@ -95,7 +95,7 @@ export default function LoginPage() {
         <p className="text-center text-sm text-muted">
           还没有账户？{' '}
           <Link href="/register" className="text-ink underline underline-offset-4 hover:text-gold transition-colors">
-            使用邀请码注册
+            立即注册
           </Link>
         </p>
       </div>

@@ -14,10 +14,6 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  async findByEmailVerificationToken(token: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { emailVerificationToken: token } });
-  }
-
   async create(data: Prisma.UserCreateInput): Promise<User> {
     return this.prisma.user.create({ data });
   }

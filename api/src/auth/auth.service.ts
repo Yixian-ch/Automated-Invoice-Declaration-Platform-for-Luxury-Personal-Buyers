@@ -41,7 +41,6 @@ export class AuthService {
           role: UserRole.RESELLER,
           accountType: AccountType.INDIVIDUAL,
           status: UserStatus.REGISTERED,
-          emailVerifiedAt: new Date(),
         },
       });
 
