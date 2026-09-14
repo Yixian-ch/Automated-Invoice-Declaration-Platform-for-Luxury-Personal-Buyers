@@ -59,8 +59,8 @@ export type UserProfile = {
   locale: string;
   phone: string | null;
   address: string | null;
-  kycDocumentKey: string | null;
-  kybDocumentKey: string | null;
+  passportDocumentKey: string | null;
+  businessLicenseKey: string | null;
 };
 
 export type ProfileDocumentType = 'passport' | 'business-license';

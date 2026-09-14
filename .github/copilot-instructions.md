@@ -20,7 +20,6 @@
 ## 关键环境变量（api/.env）
 - `BYPASS_S3=true` — 开发环境跳过S3，图片存本地
 - `BYPASS_OCR=false` — 使用真实OCR
-- `BYPASS_KYC=true` — 跳过身份验证
 - `OCR_SERVICE_URL=http://localhost:8001`
 
 ## 后端模块（api/src/）
@@ -31,12 +30,12 @@
 | ocr | `ocr/ocr.service.ts` | 调用OCR微服务，映射返回字段 |
 | ocr processor | `ocr/ocr.processor.ts` | Bull队列处理器，OCR完成后更新DB |
 | auth | `auth/` | 注册、登录、JWT |
-| kyc | `kyc/` | 护照上传，人工审核 |
+| 证件 | `users/` | 护照/营业执照上传（我的主页） |
 | storage | `storage/` | 本地/S3文件存储 |
 | prisma | `prisma/` | 数据库schema和迁移 |
 
 ## 数据库关键表（postgres）
-- `users` — 买手信息，含 `cashbackRate`、`kycStatus`、`kybStatus`
+- `users` — 买手信息，含 `cashbackRate`、证件文件 key
 - `invoices` — 小票，含 `status`(PENDING/APPROVED/REJECTED)、`lineItems`(JSON)、`needsReview`、`reviewReasons`
 - `organizations` — 买手公司
 - `merchant_bills` — 商场账单数据（Bill Check用）
