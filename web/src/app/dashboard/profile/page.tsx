@@ -90,7 +90,7 @@ function DocumentCard({
 }
 
 export default function ProfilePage() {
-  const { user, isLoading, accessToken } = useAuth();
+  const { user, isLoading, accessToken, refreshUser } = useAuth();
   const router = useRouter();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -111,11 +111,24 @@ export default function ProfilePage() {
     if (!isLoading && !user) router.push('/login');
   }, [user, isLoading, router]);
 
+  // Blob object URLs per document — revoked on replace and on unmount
+  const blobUrlsRef = useRef<Partial<Record<ProfileDocumentType, string>>>({});
+
+  useEffect(() => {
+    const urls = blobUrlsRef.current;
+    return () => {
+      Object.values(urls).forEach((u) => u && URL.revokeObjectURL(u));
+    };
+  }, []);
+
   const loadDocument = useCallback(
     async (type: ProfileDocumentType) => {
       if (!accessToken) return;
       try {
         const res = await userApi.fetchDocumentUrl(accessToken, type);
+        const old = blobUrlsRef.current[type];
+        if (old) URL.revokeObjectURL(old);
+        blobUrlsRef.current[type] = res?.url;
         setDocs((prev) => ({
           ...prev,
           [type]: {
@@ -155,14 +168,21 @@ export default function ProfilePage() {
     if (!accessToken) return;
     setSaving(true);
     try {
-      const updated = await userApi.updateProfile(accessToken, {
+      // Send only non-empty fields — an empty email would fail @IsEmail, and
+      // empty strings would overwrite existing values with ''
+      const trimmed = {
         lastName: form.lastName.trim(),
         firstName: form.firstName.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
         address: form.address.trim(),
-      });
+      };
+      const payload = Object.fromEntries(
+        Object.entries(trimmed).filter(([, v]) => v !== ''),
+      );
+      const updated = await userApi.updateProfile(accessToken, payload);
       setProfile(updated);
+      await refreshUser(); // keep the app-wide auth context (header name etc.) in sync
       toast.success('个人信息已保存');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '保存失败');

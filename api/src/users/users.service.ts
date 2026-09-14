@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { User } from '@prisma/client';
+import { Prisma, User } from '@prisma/client';
 
 export type ProfileDocumentType = 'passport' | 'business-license';
 
@@ -17,11 +17,9 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
 };
 
-const EXTENSION_MIMES: Record<string, string> = {
-  pdf: 'application/pdf',
-  jpg: 'image/jpeg',
-  png: 'image/png',
-};
+const EXTENSION_MIMES: Record<string, string> = Object.fromEntries(
+  Object.entries(MIME_EXTENSIONS).map(([mime, ext]) => [ext, mime]),
+);
 
 @Injectable()
 export class UsersService {
@@ -62,32 +60,43 @@ export class UsersService {
       }
     }
 
-    const user = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({
-        where: { id },
-        data: {
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          phone: dto.phone,
-          email: dto.email,
-          address: dto.address,
-        },
+    try {
+      const user = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            phone: dto.phone,
+            email: dto.email,
+            address: dto.address,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorId: id,
+            actorRole: updated.role,
+            action: 'PROFILE_UPDATED',
+            resourceType: 'User',
+            resourceId: id,
+            userId: id,
+            meta: { fields: Object.keys(dto) },
+          },
+        });
+        return updated;
       });
-      await tx.auditLog.create({
-        data: {
-          actorId: id,
-          actorRole: updated.role,
-          action: 'PROFILE_UPDATED',
-          resourceType: 'User',
-          resourceId: id,
-          userId: id,
-          meta: { fields: Object.keys(dto) },
-        },
-      });
-      return updated;
-    });
-
-    return this.sanitize(user);
+      return this.sanitize(user);
+    } catch (err) {
+      // Unique-constraint race on email: the pre-check above can't prevent
+      // a concurrent write, so map P2002 to the same 409
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException('该邮箱已被其他账户使用');
+      }
+      throw err;
+    }
   }
 
   private documentField(type: ProfileDocumentType) {
@@ -104,25 +113,28 @@ export class UsersService {
       select: { kycDocumentKey: true, kybDocumentKey: true, role: true },
     });
 
-    // Replace any previous file (extension may differ)
+    // Write the new file and point the DB at it before touching the old one,
+    // so a failure part-way through never loses the existing document
     const oldKey = user[field];
-    if (oldKey) this.storage.deleteFile(oldKey);
-
     const key = `user-${id}-${type}.${ext}`;
     this.storage.saveFile(key, buffer);
 
-    await this.prisma.user.update({ where: { id }, data: { [field]: key } });
-    await this.prisma.auditLog.create({
-      data: {
-        actorId: id,
-        actorRole: user.role,
-        action: 'PROFILE_DOCUMENT_UPLOADED',
-        resourceType: 'User',
-        resourceId: id,
-        userId: id,
-        meta: { type, key },
-      },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id }, data: { [field]: key } }),
+      this.prisma.auditLog.create({
+        data: {
+          actorId: id,
+          actorRole: user.role,
+          action: 'PROFILE_DOCUMENT_UPLOADED',
+          resourceType: 'User',
+          resourceId: id,
+          userId: id,
+          meta: { type, key },
+        },
+      }),
+    ]);
+
+    if (oldKey && oldKey !== key) this.storage.deleteFile(oldKey);
 
     return { type, uploaded: true };
   }
