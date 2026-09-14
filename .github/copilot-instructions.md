@@ -21,7 +21,6 @@
 - `BYPASS_S3=true` — 开发环境跳过S3，图片存本地
 - `BYPASS_OCR=false` — 使用真实OCR
 - `BYPASS_KYC=true` — 跳过身份验证
-- `BYPASS_EMAIL_VERIFICATION=true` — 跳过邮件验证
 - `OCR_SERVICE_URL=http://localhost:8001`
 
 ## 后端模块（api/src/）

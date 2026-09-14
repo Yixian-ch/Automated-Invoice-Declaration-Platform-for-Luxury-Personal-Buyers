@@ -17,7 +17,6 @@ DATABASE_URL="postgresql://lidp:lidp_dev_secret@localhost:5432/lidp_db" \
   BYPASS_S3=true \
   BYPASS_OCR=false \
   BYPASS_KYC=true \
-  BYPASS_EMAIL_VERIFICATION=true \
   NODE_ENV=development \
   npm --prefix "$ROOT/api" run start:dev &
 API_PID=$!

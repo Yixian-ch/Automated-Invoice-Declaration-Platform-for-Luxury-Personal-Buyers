@@ -6,7 +6,7 @@
  *
  * Accounts created:
  *   admin@lidp.dev          ADMIN         — platform administrator
- *   alice@lidp.dev          RESELLER      — invite-registered, KYC APPROVED
+ *   alice@lidp.dev          RESELLER      — KYC APPROVED
  *   bob@lidp.dev            RESELLER      — self-registered, KYC PENDING
  *   carol@lidp.dev          RESELLER      — self-registered, KYC + KYB APPROVED
  *   dave@lidp.dev           RESELLER      — fresh, KYC NOT_STARTED
@@ -53,12 +53,10 @@ async function main() {
       accountType: AccountType.INDIVIDUAL,
       kycStatus: KycStatus.APPROVED,
       kybStatus: KybStatus.NOT_STARTED,
-      emailVerifiedAt: now,
-      registeredViaInvite: false,
     },
   });
 
-  // ── Alice — invite-registered reseller, KYC approved ───────────────────────
+  // ── Alice — reseller, KYC approved ───────────────────────
   await prisma.user.upsert({
     where: { email: 'alice@lidp.dev' },
     update: {},
@@ -72,8 +70,6 @@ async function main() {
       accountType: AccountType.INDIVIDUAL,
       kycStatus: KycStatus.APPROVED,
       kybStatus: KybStatus.NOT_STARTED,
-      emailVerifiedAt: now,
-      registeredViaInvite: true,
     },
   });
 
@@ -93,8 +89,6 @@ async function main() {
       kybStatus: KybStatus.PENDING,
       diditKycSessionId: 'seed-pending-kyc',
       diditKybSessionId: 'seed-pending-kyb',
-      emailVerifiedAt: now,
-      registeredViaInvite: false,
     },
   });
 
@@ -112,8 +106,6 @@ async function main() {
       accountType: AccountType.INDIVIDUAL,
       kycStatus: KycStatus.APPROVED,
       kybStatus: KybStatus.APPROVED,
-      emailVerifiedAt: now,
-      registeredViaInvite: false,
     },
   });
 
@@ -131,8 +123,6 @@ async function main() {
       accountType: AccountType.INDIVIDUAL,
       kycStatus: KycStatus.NOT_STARTED,
       kybStatus: KybStatus.NOT_STARTED,
-      emailVerifiedAt: now,
-      registeredViaInvite: false,
     },
   });
 
@@ -150,8 +140,6 @@ async function main() {
       accountType: AccountType.ORGANIZATION,
       kycStatus: KycStatus.APPROVED,
       kybStatus: KybStatus.APPROVED,
-      emailVerifiedAt: now,
-      registeredViaInvite: false,
       organizationId: org.id,
     },
   });
@@ -160,7 +148,7 @@ async function main() {
 ✓ Seed complete — test accounts (password: ${PASSWORD})
 
   admin@lidp.dev      ADMIN          active
-  alice@lidp.dev      RESELLER       KYC approved  (invite-registered)
+  alice@lidp.dev      RESELLER       KYC approved
   bob@lidp.dev        RESELLER       KYC+KYB pending (self-registered)
   carol@lidp.dev      RESELLER       KYC+KYB approved (self-registered)
   dave@lidp.dev       RESELLER       not started
