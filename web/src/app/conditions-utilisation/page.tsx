@@ -8,84 +8,77 @@ export default function ConditionsUtilisationPage() {
       <LegalH2>Propos introductifs</LegalH2>
       <p>
         Les présentes conditions générales d&rsquo;utilisation (« CGU ») déterminent les règles
-        d&rsquo;utilisation de l&rsquo;application mobile « Luxe for Guide » éditée par la société
-        Luxe for Guide SAS (841 905 268 RCS PARIS – 12 rue de Beccaria, 75012 Paris FRANCE).
+        d&rsquo;utilisation de la plateforme « Ruichi », accessible à l&rsquo;adresse
+        https://ruichi.online (ci-après la « Plateforme »).
       </p>
       <p>
-        En installant l&rsquo;Application sur votre appareil et/ou en y accédant, vous acceptez sans
-        condition l&rsquo;intégralité des CGU. Si vous ne les acceptez pas, vous êtes invité à ne pas
-        utiliser l&rsquo;Application.
+        En créant un compte sur la Plateforme et/ou en y accédant, vous acceptez sans condition
+        l&rsquo;intégralité des CGU. Si vous ne les acceptez pas, vous êtes invité à ne pas utiliser
+        la Plateforme.
       </p>
 
       <LegalH2>Article 1. Définitions</LegalH2>
       <p>
-        L&rsquo;« Application » désigne l&rsquo;application mobile « Luxe for Guide » disponible
-        gratuitement sur l&rsquo;Apple Store et le Google Play Store pour les terminaux iOS et
-        Android, comprenant les contenus, logiciels, programmes, outils, bases de données et mises à
-        jour.
+        La « Plateforme » désigne l&rsquo;application web « Ruichi » accessible depuis un navigateur
+        Internet, comprenant les contenus, logiciels, programmes, outils, bases de données et mises
+        à jour.
       </p>
       <p>
-        Le « Contenu » désigne la structure de l&rsquo;Application, les contenus éditoriaux,
-        pictogrammes, illustrations, images, photographies, chartes graphiques, marques, logos et
-        tous éléments composant l&rsquo;Application.
+        Le « Contenu » désigne la structure de la Plateforme, les contenus éditoriaux, pictogrammes,
+        illustrations, images, photographies, chartes graphiques, marques, logos et tous éléments
+        composant la Plateforme.
       </p>
-      <p>Les « Services » désignent les fonctionnalités proposées par l&rsquo;Application.</p>
+      <p>Les « Services » désignent les fonctionnalités proposées par la Plateforme.</p>
       <p>
-        L&rsquo;« Utilisateur » désigne une personne majeure ayant téléchargé l&rsquo;Application en
-        qualité de « Partenaire apporteur d&rsquo;affaires », avec le statut de salarié ou
+        L&rsquo;« Utilisateur » désigne une personne majeure ayant créé un compte sur la Plateforme
+        en qualité de partenaire apporteur d&rsquo;affaires, avec le statut de salarié ou
         d&rsquo;indépendant / freelance.
       </p>
 
-      <LegalH2>Article 2. Objet de l&rsquo;Application</LegalH2>
+      <LegalH2>Article 2. Objet de la Plateforme</LegalH2>
       <p>
-        L&rsquo;Application donne accès aux informations et actualités des partenaires luxe et
-        permet un référencement français et mondial. Les services incluent notamment :
-        l&rsquo;accès aux partenaires, la validation d&rsquo;activités, le dépôt de pièces
-        justificatives, l&rsquo;accès aux actualités, le partage social, les informations pratiques,
-        la planification, la gestion administrative, le pilotage d&rsquo;activité, la recherche de
-        produits et la géolocalisation.
+        Ruichi est une plateforme numérique et décentralisée mettant en relation les maisons et
+        boutiques partenaires avec leurs clients à travers un canal efficace et privé. Les Services
+        incluent notamment : la création et la gestion d&rsquo;un espace personnel, le dépôt de
+        pièces justificatives, la déclaration de factures et tickets d&rsquo;achat, le suivi de leur
+        validation, le calcul et le suivi des commissions, ainsi que la gestion administrative de
+        l&rsquo;activité d&rsquo;apporteur d&rsquo;affaires.
       </p>
 
-      <LegalH2>Article 3. Accès à l&rsquo;Application</LegalH2>
+      <LegalH2>Article 3. Accès à la Plateforme</LegalH2>
       <p>
-        L&rsquo;Application est téléchargeable gratuitement sur iPhone disposant d&rsquo;iOS 8 ou
-        version ultérieure et sur les terminaux Android OS 4.4 ou version ultérieure. Un accès
-        Internet et un terminal compatible sont nécessaires.
+        La Plateforme est accessible gratuitement depuis tout navigateur récent. Un accès Internet
+        et un terminal compatible sont nécessaires. L&rsquo;accès à l&rsquo;espace personnel
+        nécessite la création d&rsquo;un compte avec une adresse électronique valide et un mot de
+        passe.
       </p>
 
-      <LegalH2>Article 4. Géolocalisation</LegalH2>
+      <LegalH2>Article 4. Conditions financières</LegalH2>
       <p>
-        La géolocalisation requiert votre consentement exprès ainsi que son activation dans les
-        réglages du terminal. Elle permet d&rsquo;être repéré par les partenaires, de recevoir des
-        messages informatifs ou commerciaux et de paramétrer des itinéraires. Cette fonction est
-        désactivable à tout moment et sans frais.
+        L&rsquo;utilisation de la Plateforme est gratuite, hors coûts d&rsquo;abonnement
+        téléphonique, de connexion Internet et surcoûts éventuels de données restant à la charge de
+        l&rsquo;Utilisateur.
       </p>
 
-      <LegalH2>Article 5. Conditions financières</LegalH2>
+      <LegalH2>Article 5. Application des CGU</LegalH2>
       <p>
-        L&rsquo;Application est gratuite, hors coûts d&rsquo;abonnement téléphonique, de connexion
-        Internet et surcoûts éventuels de données.
+        Les CGU s&rsquo;appliquent à tout Utilisateur et sont accessibles par lien sur la page
+        d&rsquo;accueil de la Plateforme. Elles peuvent être modifiées sans préavis. La Plateforme
+        fait l&rsquo;objet de mises à jour régulières.
       </p>
 
-      <LegalH2>Article 6. Application des CGU et des CGV</LegalH2>
+      <LegalH2>Article 6. Propriété intellectuelle</LegalH2>
       <p>
-        Les CGU s&rsquo;appliquent à tout utilisateur et sont accessibles par lien sur la page
-        d&rsquo;accueil. Elles peuvent être modifiées sans préavis. L&rsquo;Application fait
-        l&rsquo;objet de mises à jour régulières, avec une validité limitée des versions.
+        Ruichi est propriétaire exclusif de tous les droits de propriété intellectuelle portant sur
+        la Plateforme et le Contenu, à l&rsquo;exception des contenus publiés par les partenaires et
+        des documents déposés par les Utilisateurs.
       </p>
 
-      <LegalH2>Article 7. Propriété intellectuelle de l&rsquo;Application</LegalH2>
+      <LegalH2>Article 7. Licence d&rsquo;utilisation</LegalH2>
       <p>
-        Luxe for Guide est propriétaire exclusif de tous les droits de propriété intellectuelle
-        portant sur l&rsquo;Application et le Contenu, à l&rsquo;exception des publications des
-        partenaires dans la rubrique « Event ».
-      </p>
-
-      <LegalH2>Article 8. Licence d&rsquo;utilisation</LegalH2>
-      <p>
-        Luxe for Guide concède à l&rsquo;Utilisateur un droit personnel d&rsquo;utilisation de
-        l&rsquo;Application, du Contenu et des Services, non exclusif, révocable, non cessible, non
-        transférable, mondial et gratuit, pour les seuls besoins de guide de touristes apporteur
+        Ruichi concède à l&rsquo;Utilisateur un droit personnel d&rsquo;utilisation de la
+        Plateforme, du Contenu et des Services, non exclusif, révocable, non cessible, non
+        transférable, mondial et gratuit, pour les seuls besoins de son activité d&rsquo;apporteur
         d&rsquo;affaires.
       </p>
       <p>
@@ -95,82 +88,81 @@ export default function ConditionsUtilisationPage() {
         représentation, adaptation ou exploitation du Contenu est interdite.
       </p>
 
-      <LegalH2>Article 9. Obligations de l&rsquo;Utilisateur</LegalH2>
+      <LegalH2>Article 8. Obligations de l&rsquo;Utilisateur</LegalH2>
       <p>L&rsquo;Utilisateur s&rsquo;engage notamment à :</p>
       <ul className="list-disc space-y-1 pl-6">
-        <li>ne pas reproduire l&rsquo;Application, en tout ou partie ;</li>
-        <li>ne pas utiliser de logiciels de copie sans autorisation écrite ;</li>
+        <li>fournir des informations et des documents exacts, sincères et à jour ;</li>
+        <li>ne déclarer que des factures et tickets d&rsquo;achat authentiques ;</li>
+        <li>ne pas reproduire la Plateforme, en tout ou partie ;</li>
         <li>
-          ne pas adapter, modifier, traduire, décompiler l&rsquo;Application ni lui appliquer
+          ne pas adapter, modifier, traduire, décompiler la Plateforme ni lui appliquer
           l&rsquo;ingénierie inverse ;
         </li>
-        <li>ne pas exporter ou fusionner l&rsquo;Application ;</li>
         <li>respecter les droits d&rsquo;auteur et les citations autorisées ;</li>
         <li>ne pas utiliser de logiciels perturbant son fonctionnement ;</li>
         <li>ne pas extraire de contenu des bases de données sans autorisation ;</li>
-        <li>ne pas pirater l&rsquo;Application ni violer les CGU ;</li>
-        <li>informer Luxe for Guide de tout acte de piratage ;</li>
-        <li>ne pas vendre, louer ou distribuer l&rsquo;Application à des tiers.</li>
+        <li>ne pas pirater la Plateforme ni violer les CGU ;</li>
+        <li>informer Ruichi de tout acte de piratage dont il aurait connaissance ;</li>
+        <li>ne pas vendre, louer ou distribuer l&rsquo;accès à la Plateforme à des tiers ;</li>
+        <li>préserver la confidentialité de ses identifiants de connexion.</li>
       </ul>
 
-      <LegalH2>Article 10. Liens hypertextes et cookies</LegalH2>
+      <LegalH2>Article 9. Liens hypertextes et cookies</LegalH2>
       <p>
-        Le site https://luxeforguide.com/ contient des liens hypertextes vers d&rsquo;autres sites,
-        mis en place avec autorisation ; Luxe for Guide n&rsquo;assume toutefois aucune
-        responsabilité quant à leur contenu.
+        La Plateforme peut contenir des liens hypertextes vers d&rsquo;autres sites ; Ruichi
+        n&rsquo;assume aucune responsabilité quant à leur contenu.
       </p>
       <p>
-        La navigation peut installer des cookies enregistrant des informations de navigation. Leur
-        refus peut empêcher l&rsquo;accès à certains services. La configuration est possible via les
-        paramètres de votre navigateur (Internet Explorer, Firefox, Safari, Chrome).
+        La navigation sur la Plateforme peut entraîner l&rsquo;installation de cookies nécessaires à
+        son fonctionnement (notamment à l&rsquo;authentification). Leur refus peut empêcher
+        l&rsquo;accès à certains services. La configuration est possible via les paramètres de votre
+        navigateur.
       </p>
 
-      <LegalH2>Article 11. Disponibilité de l&rsquo;Application</LegalH2>
+      <LegalH2>Article 10. Disponibilité de la Plateforme</LegalH2>
       <p>
-        L&rsquo;Application est accessible 24h/24, 7j/7, sauf cas de force majeure, événements hors
-        de contrôle ou opérations de maintenance nécessaires, pouvant être effectuées sans
+        La Plateforme est accessible 24h/24, 7j/7, sauf cas de force majeure, événements hors de
+        contrôle ou opérations de maintenance nécessaires, pouvant être effectuées sans
         avertissement préalable.
       </p>
 
-      <LegalH2>Article 12. Limitation de garantie</LegalH2>
+      <LegalH2>Article 11. Limitation de garantie</LegalH2>
       <p>
-        L&rsquo;accès à l&rsquo;Application se fait aux risques et périls de l&rsquo;Utilisateur.
-        L&rsquo;Application est fournie « telle quelle » et « comme disponible », sans garantie.
+        L&rsquo;accès à la Plateforme se fait aux risques et périls de l&rsquo;Utilisateur. La
+        Plateforme est fournie « telle quelle » et « comme disponible », sans garantie.
       </p>
       <p>
         L&rsquo;Utilisateur accepte les caractéristiques et limites d&rsquo;Internet : défaillances
-        de réseau, saturation, temps de transit, absence de protection de certaines données, risques
-        de virus. Luxe for Guide ne peut être tenue responsable en cas de défaut, perte, retard ou
-        erreur de transmission, de mauvaise utilisation du terminal, ni de dommages aux équipements
-        ou aux données.
+        de réseau, saturation, temps de transit, risques d&rsquo;interception. Ruichi ne peut être
+        tenue responsable en cas de défaut, perte, retard ou erreur de transmission, de mauvaise
+        utilisation du terminal, ni de dommages aux équipements ou aux données de
+        l&rsquo;Utilisateur.
       </p>
 
-      <LegalH2>Article 13. Évolution des conditions générales d&rsquo;utilisation</LegalH2>
+      <LegalH2>Article 12. Évolution des conditions générales d&rsquo;utilisation</LegalH2>
       <p>
-        Les CGU en vigueur lors de chaque connexion s&rsquo;appliquent. Luxe for Guide peut les
-        modifier à tout moment et sans préavis afin de les adapter aux évolutions techniques,
-        légales ou aux nouvelles prestations. Les modifications sont réputées acceptées par tout
-        utilisateur accédant à l&rsquo;Application postérieurement à leur mise en ligne.
+        Les CGU en vigueur lors de chaque connexion s&rsquo;appliquent. Ruichi peut les modifier à
+        tout moment et sans préavis afin de les adapter aux évolutions techniques, légales ou aux
+        nouvelles prestations. Les modifications sont réputées acceptées par tout Utilisateur
+        accédant à la Plateforme postérieurement à leur mise en ligne.
       </p>
 
-      <LegalH2>Article 14. Résiliation</LegalH2>
+      <LegalH2>Article 13. Résiliation</LegalH2>
       <p>
-        Luxe for Guide peut mettre fin à l&rsquo;utilisation de l&rsquo;Application à tout moment,
-        moyennant préavis. Les droits et licences concédés cessent alors et l&rsquo;Utilisateur doit
-        en arrêter toute utilisation.
+        Ruichi peut mettre fin à l&rsquo;accès à la Plateforme à tout moment, moyennant préavis,
+        notamment en cas de violation des présentes CGU. Les droits et licences concédés cessent
+        alors et l&rsquo;Utilisateur doit en arrêter toute utilisation.
       </p>
 
-      <LegalH2>Article 15. Contact</LegalH2>
+      <LegalH2>Article 14. Contact</LegalH2>
       <p>
-        Toute question peut être adressée à : Luxe for Guide – Service Application et CGU – 12 rue
-        de Beccaria, 75012 Paris FRANCE, tél. 09.74.76.72.00, ou via le formulaire de contact de
-        l&rsquo;application.
+        Toute question relative aux présentes CGU peut être adressée à : Ruichi – contact@ruichi.online.
       </p>
 
-      <LegalH2>Article 16. Loi applicable</LegalH2>
+      <LegalH2>Article 15. Loi applicable</LegalH2>
       <p>
-        Les CGU sont soumises à la loi française. Tout litige relève de la compétence du Tribunal
-        judiciaire de Paris.
+        Les CGU sont soumises à la loi française. Tout litige relève de la compétence des tribunaux
+        de Paris.
       </p>
     </LegalPage>
   );
