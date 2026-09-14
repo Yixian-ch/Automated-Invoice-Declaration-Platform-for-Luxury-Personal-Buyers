@@ -73,6 +73,12 @@ export default function DashboardPage() {
           <span className="text-xs text-muted">
             {user.firstName} {user.lastName}
           </span>
+          <button
+            onClick={() => router.push('/dashboard/profile')}
+            className="btn-ghost text-xs"
+          >
+            我的主页
+          </button>
           <button onClick={logout} className="btn-ghost text-xs">
             退出
           </button>

@@ -61,6 +61,8 @@ model User {
   diditKycSessionId      String?
   registeredViaInvite    Boolean       @default(false)
   kycDocumentKey         String?
+  kybDocumentKey         String?
+  address                String?
   auditLogs              AuditLog[]
   invoices               Invoice[]
   organization           Organization? @relation(fields: [organizationId], references: [id])
