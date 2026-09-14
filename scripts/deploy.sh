@@ -17,13 +17,17 @@ flock 9
 
 echo "[deploy] $(date -Is) — fetching origin/main"
 git fetch origin main
-BEFORE=$(git rev-parse HEAD)
 git reset --hard origin/main
 AFTER=$(git rev-parse HEAD)
-echo "[deploy] ${BEFORE:0:7} → ${AFTER:0:7}"
+
+# Compare against the last successfully deployed commit — not the checkout
+# before the pull, which the workflow may already have advanced
+STAMP=".last-deployed-commit"
+BEFORE=$(cat "$STAMP" 2>/dev/null || echo "none")
+echo "[deploy] deployed=${BEFORE:0:7} → target=${AFTER:0:7}"
 
 if [ "$BEFORE" = "$AFTER" ] && [ "${FORCE:-}" != "1" ]; then
-  echo "[deploy] already up to date — nothing to do (FORCE=1 to redeploy anyway)"
+  echo "[deploy] already deployed — nothing to do (FORCE=1 to redeploy anyway)"
   exit 0
 fi
 
@@ -50,4 +54,5 @@ done
 echo "[deploy] pruning dangling images"
 docker image prune -f >/dev/null
 
+echo "$AFTER" > "$STAMP"
 echo "[deploy] done — deployed ${AFTER:0:7}"

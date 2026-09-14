@@ -239,3 +239,4 @@ __marimo__/
 .streamlit/secrets.toml
 
 !web/src/lib/
+.last-deployed-commit
