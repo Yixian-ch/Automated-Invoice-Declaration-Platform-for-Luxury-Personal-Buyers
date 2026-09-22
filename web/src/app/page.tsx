@@ -64,17 +64,17 @@ export default function HomePage() {
       {/* ── Footer — liens légaux ──────────────────────────────── */}
       <footer className="relative z-10 px-6 pb-8 sm:px-10">
         <nav className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-ink/50">
-          <Link href="/conditions-utilisation" className="transition-colors hover:text-ink">
-            Conditions d&rsquo;utilisation
+          <Link href="/terms" className="transition-colors hover:text-ink">
+            Terms of Use
           </Link>
-          <Link href="/mentions-legales" className="transition-colors hover:text-ink">
-            Mentions légales
+          <Link href="/legal-notice" className="transition-colors hover:text-ink">
+            Legal Notice
           </Link>
-          <Link href="/rgpd-application" className="transition-colors hover:text-ink">
-            RGPD – Confidentialité de l&rsquo;application Ruichi
+          <Link href="/data-protection" className="transition-colors hover:text-ink">
+            Data Protection &amp; Confidentiality
           </Link>
-          <Link href="/politique-de-confidentialite" className="transition-colors hover:text-ink">
-            Politique de confidentialité
+          <Link href="/privacy" className="transition-colors hover:text-ink">
+            Privacy Policy
           </Link>
         </nav>
       </footer>
