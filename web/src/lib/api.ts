@@ -62,6 +62,7 @@ export type UserProfile = {
   passportDocumentKey: string | null;
   businessLicenseKey: string | null;
   bankAccountName: string | null;
+  bankName: string | null;
   bankIban: string | null;
   bankBic: string | null;
 };
@@ -75,6 +76,7 @@ export type UpdateProfilePayload = {
   email?: string;
   address?: string;
   bankAccountName?: string;
+  bankName?: string;
   bankIban?: string;
   bankBic?: string;
 };

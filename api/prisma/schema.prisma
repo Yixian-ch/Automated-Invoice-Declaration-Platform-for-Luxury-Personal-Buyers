@@ -56,6 +56,7 @@ model User {
   businessLicenseKey     String?
   address                String?
   bankAccountName        String?
+  bankName               String?
   bankIban               String?
   bankBic                String?
   auditLogs              AuditLog[]

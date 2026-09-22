@@ -7,9 +7,9 @@ import {
   authApi,
   userApi,
   type ProfileDocumentType,
-  type UserProfile,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { NameWatermark } from '@/components/name-watermark';
 import { toast } from 'sonner';
 
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -93,7 +93,6 @@ export default function ProfilePage() {
   const { user, isLoading, accessToken, refreshUser } = useAuth();
   const router = useRouter();
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     lastName: '',
@@ -102,8 +101,8 @@ export default function ProfilePage() {
     email: '',
     address: '',
     bankAccountName: '',
+    bankName: '',
     bankIban: '',
-    bankBic: '',
   });
   const [docs, setDocs] = useState<Record<ProfileDocumentType, DocState>>({
     passport: EMPTY_DOC,
@@ -153,7 +152,6 @@ export default function ProfilePage() {
     authApi
       .me(accessToken)
       .then((p) => {
-        setProfile(p);
         setForm({
           lastName: p.lastName ?? '',
           firstName: p.firstName ?? '',
@@ -161,8 +159,8 @@ export default function ProfilePage() {
           email: p.email ?? '',
           address: p.address ?? '',
           bankAccountName: p.bankAccountName ?? '',
+          bankName: p.bankName ?? '',
           bankIban: p.bankIban ?? '',
-          bankBic: p.bankBic ?? '',
         });
         if (p.passportDocumentKey) loadDocument('passport');
         if (p.businessLicenseKey) loadDocument('business-license');
@@ -183,14 +181,13 @@ export default function ProfilePage() {
         email: form.email.trim(),
         address: form.address.trim(),
         bankAccountName: form.bankAccountName.trim(),
+        bankName: form.bankName.trim(),
         bankIban: form.bankIban.trim(),
-        bankBic: form.bankBic.trim(),
       };
       const payload = Object.fromEntries(
         Object.entries(trimmed).filter(([, v]) => v !== ''),
       );
-      const updated = await userApi.updateProfile(accessToken, payload);
-      setProfile(updated);
+      await userApi.updateProfile(accessToken, payload);
       await refreshUser(); // keep the app-wide auth context (header name etc.) in sync
       toast.success('个人信息已保存');
     } catch (err) {
@@ -237,14 +234,15 @@ export default function ProfilePage() {
     { key: 'email', label: '邮箱', type: 'email' },
     { key: 'address', label: '地址' },
     { key: 'bankAccountName', label: '收款人姓名' },
-    { key: 'bankIban', label: 'IBAN（返点收款账户）' },
-    { key: 'bankBic', label: 'BIC（可选）' },
+    { key: 'bankName', label: '银行名称' },
+    { key: 'bankIban', label: '收款银行账户' },
   ];
 
   return (
-    <main className="min-h-screen flex flex-col">
+    <main className="relative min-h-screen flex flex-col">
+      <NameWatermark />
       {/* 导航栏 */}
-      <header className="border-b border-border px-8 py-4 flex items-center justify-between">
+      <header className="relative z-10 border-b border-border px-8 py-4 flex items-center justify-between">
         <span className="text-sm tracking-[0.2em] uppercase" style={{ fontFamily: 'var(--font-serif)' }}>
           LIDP
         </span>
@@ -255,7 +253,7 @@ export default function ProfilePage() {
         </nav>
       </header>
 
-      <div className="flex-1 px-8 py-12 max-w-3xl mx-auto w-full space-y-10">
+      <div className="relative z-10 flex-1 px-8 py-12 max-w-3xl mx-auto w-full space-y-10">
         <div>
           <h1 className="text-3xl font-light" style={{ fontFamily: 'var(--font-serif)' }}>
             我的主页
@@ -307,11 +305,29 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {profile && (
-          <p className="text-xs text-muted">
-            账户状态：{profile.status} · 角色：{profile.role}
-          </p>
-        )}
+        {/* 常见问题 */}
+        <div className="card-luxury space-y-5">
+          <p className="text-xs tracking-widest uppercase text-muted">常见问题</p>
+          {[
+            {
+              q: '资料好多，都需要填写吗？',
+              a: 'Ruichi 依照正规法律途径为大家处理返点，文件和法律缺一不可，填写完成才能通过法务审核。',
+            },
+            {
+              q: '文件过期了怎么办？',
+              a: '文件过期没关系，可以先提交文件。等到结算返点时，缴交有效的文件即可。',
+            },
+            {
+              q: '营业执照一定要本人名下吗？',
+              a: '需要导游证或营业执照，一定要本人名下，可以使用个体工商户。如果皆没有，可以挂他人名下，以他人名义返点。',
+            },
+          ].map((item) => (
+            <div key={item.q} className="space-y-1">
+              <p className="text-sm font-medium text-stone-800">{item.q}</p>
+              <p className="text-sm leading-relaxed text-stone-600">{item.a}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </main>
   );
