@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { invoiceApi, type Invoice, type InvoiceStatus, type CashbackBreakdownItem } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
+import { NameWatermark } from '@/components/name-watermark';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -93,7 +94,9 @@ export default function InvoiceDetailPage() {
   const totalCashback = breakdown.reduce((s, it) => s + (Number(it.cashback) || 0), 0);
 
   return (
-    <main className="min-h-screen flex flex-col bg-surface">
+    <main className="relative min-h-screen flex flex-col bg-surface">
+      <NameWatermark />
+      <div className="relative z-10 flex flex-col flex-1">
       <Header />
 
       <div className="flex-1 px-8 py-10 max-w-5xl mx-auto w-full">
@@ -252,6 +255,7 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </main>
   );

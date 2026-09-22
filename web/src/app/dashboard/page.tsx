@@ -7,6 +7,7 @@ import { invoiceApi, type Invoice } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SettlementSection } from '@/components/settlement-section';
+import { NameWatermark } from '@/components/name-watermark';
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: '待审核',
@@ -64,9 +65,10 @@ export default function DashboardPage() {
     .reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);
 
   return (
-    <main className="min-h-screen flex flex-col">
+    <main className="relative min-h-screen flex flex-col">
+      <NameWatermark />
       {/* 导航栏 */}
-      <header className="border-b border-border px-8 py-4 flex items-center justify-between">
+      <header className="relative z-10 border-b border-border px-8 py-4 flex items-center justify-between">
         <span className="text-sm tracking-[0.2em] uppercase" style={{ fontFamily: 'var(--font-serif)' }}>
           LIDP
         </span>
@@ -87,7 +89,7 @@ export default function DashboardPage() {
       </header>
 
       {/* 内容区 */}
-      <div className="flex-1 px-8 py-12 max-w-5xl mx-auto w-full space-y-10">
+      <div className="relative z-10 flex-1 px-8 py-12 max-w-5xl mx-auto w-full space-y-10">
 
         <div className="flex items-end justify-between">
           <div>
@@ -158,6 +160,7 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-stone-100 text-xs text-muted uppercase tracking-wider">
                     <th className="text-left pb-3 font-normal">门店</th>
+                    <th className="text-left pb-3 font-normal">发票号</th>
                     <th className="text-left pb-3 font-normal">日期</th>
                     <th className="text-right pb-3 font-normal">金额</th>
                     <th className="text-right pb-3 font-normal">返点</th>
@@ -173,6 +176,9 @@ export default function DashboardPage() {
                     >
                       <td className="py-3 pr-4 max-w-[180px] truncate text-stone-700">
                         {inv.vendorName ?? '—'}
+                      </td>
+                      <td className="py-3 pr-4 text-stone-600 text-xs font-mono">
+                        {inv.invoiceNumber ?? '—'}
                       </td>
                       <td className="py-3 pr-4 text-stone-500 text-xs">
                         {inv.purchaseDate
