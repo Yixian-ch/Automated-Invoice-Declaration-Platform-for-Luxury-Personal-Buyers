@@ -20,7 +20,7 @@ export function LegalPage({ title, children }: { title: string; children: ReactN
           <span className="text-sm font-medium tracking-wide text-ink">Ruichi</span>
         </Link>
         <Link href="/" className="text-sm text-ink/70 transition-colors hover:text-ink">
-          ← Accueil
+          ← Home
         </Link>
       </header>
 
@@ -46,5 +46,14 @@ export function LegalH2({ children }: { children: ReactNode }) {
     >
       {children}
     </h2>
+  );
+}
+
+/** Emphasised callout for the data-confidentiality warning clause */
+export function LegalWarning({ children }: { children: ReactNode }) {
+  return (
+    <div className="my-4 rounded border-l-2 border-gold bg-gold/5 px-4 py-3 text-ink/90">
+      {children}
+    </div>
   );
 }
