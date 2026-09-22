@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { invoiceApi, type Invoice, type InvoiceStatus, type LineItem } from '@/lib/api';
+import { invoiceApi, type Invoice, type InvoiceStatus, type CashbackBreakdownItem } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -88,11 +88,9 @@ export default function InvoiceDetailPage() {
 
   const isApproved = invoice.status === 'APPROVED';
   const imageUrl = `${API_BASE}/api/v1/invoices/${id}/image`;
-
-  const confidence =
-    invoice.ocrConfidence != null
-      ? `${Math.round(invoice.ocrConfidence * 100)}%`
-      : null;
+  const currency = invoice.currency ?? '€';
+  const breakdown = invoice.cashbackBreakdown ?? [];
+  const totalCashback = breakdown.reduce((s, it) => s + (Number(it.cashback) || 0), 0);
 
   return (
     <main className="min-h-screen flex flex-col bg-surface">
@@ -138,11 +136,11 @@ export default function InvoiceDetailPage() {
             )}
           </div>
 
-          {/* 右侧 — OCR 结果 */}
+          {/* 右侧 — 小票信息 */}
           <div className="card-luxury">
             <div>
               <div className="flex items-center justify-between mb-4">
-                <p className="text-xs tracking-widest uppercase text-muted">OCR 识别结果</p>
+                <p className="text-xs tracking-widest uppercase text-muted">小票信息</p>
                 <Badge variant={STATUS_VARIANT[invoice.status]}>
                   {STATUS_LABEL[invoice.status]}
                 </Badge>
@@ -166,30 +164,20 @@ export default function InvoiceDetailPage() {
                   label="金额"
                   value={
                     invoice.grandTotalAmount
-                      ? `${invoice.currency ?? '€'} ${Number(invoice.grandTotalAmount).toFixed(2)}`
+                      ? `${currency} ${Number(invoice.grandTotalAmount).toFixed(2)}`
                       : null
                   }
                 />
-                <Field
-                  label="OCR 置信度"
-                  value={
-                    confidence ? (
-                      <span className={Number(invoice.ocrConfidence) >= 0.8 ? 'text-green-700' : 'text-amber-600'}>
-                        {confidence}
-                      </span>
-                    ) : null
-                  }
-                />
-                {isApproved && (
-                  <div className="py-3">
-                    <p className="text-xs tracking-widest uppercase text-muted mb-0.5">返点</p>
-                    <p className="text-xl font-light text-gold" style={{ fontFamily: 'var(--font-serif)' }}>
-                      {invoice.cashbackAmount
-                        ? `€${Number(invoice.cashbackAmount).toFixed(2)}`
-                        : '—'}
-                    </p>
-                  </div>
-                )}
+                <div className="py-3">
+                  <p className="text-xs tracking-widest uppercase text-muted mb-0.5">
+                    返点{!isApproved && '（预估）'}
+                  </p>
+                  <p className="text-xl font-light text-gold" style={{ fontFamily: 'var(--font-serif)' }}>
+                    {invoice.cashbackAmount
+                      ? `€${Number(invoice.cashbackAmount).toFixed(2)}`
+                      : '—'}
+                  </p>
+                </div>
               </div>
 
               <div className="mt-6 pt-4 border-t border-stone-100">
@@ -210,34 +198,56 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
 
-        {/* 行项目表格 */}
-        {invoice.lineItems && invoice.lineItems.length > 0 && (
+        {/* 返点明细（按商品逐条） */}
+        {breakdown.length > 0 && (
           <div className="card-luxury mt-8">
-            <p className="text-xs tracking-widest uppercase text-muted mb-4">行项目</p>
+            <p className="text-xs tracking-widest uppercase text-muted mb-4">
+              返点明细{!isApproved && '（预估）'}
+            </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-stone-200 text-xs text-stone-400 uppercase tracking-wider">
                     <th className="text-left py-2 pr-4 font-medium">商品描述</th>
-                    <th className="text-right py-2 pr-4 font-medium">数量</th>
-                    <th className="text-right py-2 font-medium">含税金额</th>
+                    <th className="text-right py-2 pr-4 font-medium">含税金额</th>
+                    <th className="text-right py-2 pr-4 font-medium">返点比例</th>
+                    <th className="text-right py-2 font-medium">返点金额</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoice.lineItems.map((item: LineItem, i: number) => (
-                    <tr key={i} className="border-b border-stone-50">
-                      <td className="py-2 pr-4 text-stone-700">{item.description}</td>
-                      <td className="py-2 pr-4 text-right text-stone-600">
-                        {item.quantity != null ? item.quantity : '—'}
-                      </td>
-                      <td className="py-2 text-right text-stone-700">
-                        {item.amount_ttc != null
-                          ? `${invoice.currency ?? '€'} ${Number(item.amount_ttc).toFixed(2)}`
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {breakdown.map((item: CashbackBreakdownItem, i: number) => {
+                    const amount = Number(item.amountTTC) || 0;
+                    const cash = Number(item.cashback) || 0;
+                    const rate = amount > 0 ? cash / amount : 0;
+                    return (
+                      <tr key={i} className="border-b border-stone-50">
+                        <td className="py-2 pr-4 text-stone-700">
+                          {item.description || '—'}
+                          {item.brand && (
+                            <span className="ml-2 text-xs text-stone-400">{item.brand}</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4 text-right text-stone-700">
+                          {currency} {amount.toFixed(2)}
+                        </td>
+                        <td className="py-2 pr-4 text-right text-stone-600">
+                          {(rate * 100).toFixed(1)}%
+                        </td>
+                        <td className="py-2 text-right text-gold">
+                          €{cash.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t border-stone-200 font-medium">
+                    <td className="py-2.5 pr-4 text-stone-700">合计</td>
+                    <td className="py-2.5 pr-4"></td>
+                    <td className="py-2.5 pr-4"></td>
+                    <td className="py-2.5 text-right text-gold">€{totalCashback.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
