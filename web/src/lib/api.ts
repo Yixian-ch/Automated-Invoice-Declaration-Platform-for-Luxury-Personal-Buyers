@@ -154,6 +154,17 @@ export type LineItem = {
   confidence: number;
 };
 
+/** Per-product cashback detail computed by the backend */
+export type CashbackBreakdownItem = {
+  description: string;
+  brand: string | null;
+  itemCategory: string | null;
+  amountTTC: number;
+  merchantRate: number;
+  brandRate: number;
+  cashback: number;
+};
+
 export type Invoice = {
   id: string;
   status: InvoiceStatus;
@@ -171,6 +182,7 @@ export type Invoice = {
   needsReview: boolean | null;
   reviewReasons: string[] | null;
   lineItems: LineItem[] | null;
+  cashbackBreakdown: CashbackBreakdownItem[] | null;
   uploadedAt: string | null;
   createdAt: string;
 };
