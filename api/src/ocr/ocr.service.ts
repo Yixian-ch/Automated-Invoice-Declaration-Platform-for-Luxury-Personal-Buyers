@@ -76,6 +76,7 @@ You MUST output a single valid JSON object. Do not include markdown codeblocks, 
 
       const userPrompt = `Please extract the following structural data from this invoice or receipt:
 - merchantName (string, name of store e.g., CHANEL, LOUIS VUITTON, GALERIES LAFAYETTE)
+- invoiceNumber (string or null — the invoice / receipt / facture number. It is usually printed after "N°", "No", "Facture", "Ticket", "Reçu" or "Invoice", and on these receipts typically starts with the letter "N" (e.g. "N1234567890"). Return the full identifier exactly as printed, including the leading "N" if shown; null if no such number is present)
 - purchaseDate (string format YYYY-MM-DD)
 - grandTotalAmount (float, the total amount including tax — "Montant total TTC")
 - taxRefundAmount (float or null — the duty-free refund amount labelled "Montant de la détaxe" or "Montant de remboursement" on BVE/détaxe receipts; null if not present)
@@ -167,6 +168,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       grandTotalAmount: raw.grandTotalAmount ? parseFloat(raw.grandTotalAmount) : undefined,
       grandTotalAmountConfidence: raw.grandTotalAmount ? 0.90 : 0.0,
       taxRefundAmount: raw.taxRefundAmount ? parseFloat(raw.taxRefundAmount) : undefined,
+      invoiceNumber: raw.invoiceNumber ? String(raw.invoiceNumber).trim() : undefined,
       buyerName: raw.buyerName || null,
       lineItems: (raw.lineItems || []).map((item: any) => ({
         description: item.description || 'Unknown Item',
@@ -183,6 +185,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       confidence,
       rawJson: {
         merchant_name: raw.merchantName,
+        invoice_number: raw.invoiceNumber,
         purchase_date: raw.purchaseDate,
         grand_total_amount: raw.grandTotalAmount,
         tax_refund_amount: raw.taxRefundAmount,
@@ -201,6 +204,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     return {
       merchantName: 'LA SAMARITAINE',
       merchantNameConfidence: 0.95,
+      invoiceNumber: 'N1234567890',
       purchaseDate: new Date('2025-09-21'),
       purchaseDateConfidence: 0.91,
       grandTotalAmount: 10603.0,
