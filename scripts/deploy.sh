@@ -37,6 +37,10 @@ $COMPOSE build --pull api web
 echo "[deploy] restarting containers (api runs prisma migrate deploy on start)"
 $COMPOSE up -d
 
+# nginx 配置是只读挂载,up -d 不会重建容器,改了 default.conf 要显式 reload
+echo "[deploy] reloading nginx config"
+$COMPOSE exec -T nginx nginx -t && $COMPOSE exec -T nginx nginx -s reload || echo "[deploy] WARN: nginx reload failed"
+
 echo "[deploy] waiting for api health"
 for i in $(seq 1 30); do
   if docker exec lidp_api wget -qO- http://localhost:3001/api/v1 >/dev/null 2>&1 \

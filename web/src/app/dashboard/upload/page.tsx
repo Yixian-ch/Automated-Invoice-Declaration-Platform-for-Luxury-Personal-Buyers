@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { invoiceApi } from '@/lib/api';
+import { compressImageForUpload, formatBytes } from '@/lib/image-compress';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -14,7 +15,7 @@ const ACCEPTED_TYPES: Record<string, string> = {
 };
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
-type FileStatus = 'pending' | 'uploading' | 'done' | 'error';
+type FileStatus = 'pending' | 'compressing' | 'uploading' | 'done' | 'error';
 
 type FileItem = {
   id: string;
@@ -22,6 +23,8 @@ type FileItem = {
   status: FileStatus;
   progress: number;
   error?: string;
+  /** 压缩后实际上传的体积(仅图片被压缩时有) */
+  uploadedBytes?: number;
 };
 
 export default function UploadPage() {
@@ -89,9 +92,17 @@ export default function UploadPage() {
 
     for (const item of pending) {
       try {
-        updateItem(item.id, { status: 'uploading', progress: 0 });
+        // 先在浏览器里压缩照片(长边 2000px、JPEG 0.85),再上传
+        updateItem(item.id, { status: 'compressing', progress: 0 });
+        const { file: toUpload, compressed } = await compressImageForUpload(item.file);
 
-        await invoiceApi.upload(accessToken, item.file, (pct) =>
+        updateItem(item.id, {
+          status: 'uploading',
+          progress: 0,
+          uploadedBytes: compressed ? toUpload.size : undefined,
+        });
+
+        await invoiceApi.upload(accessToken, toUpload, (pct) =>
           updateItem(item.id, { progress: pct }),
         );
 
@@ -259,6 +270,7 @@ function FileRow({
 }) {
   const label = {
     pending: '待上传',
+    compressing: '压缩中…',
     uploading: `${item.progress}%`,
     done: '完成 ✓',
     error: item.error ?? '上传失败',
@@ -266,6 +278,7 @@ function FileRow({
 
   const labelColor = {
     pending: 'text-stone-400',
+    compressing: 'text-[#B8966E]',
     uploading: 'text-[#B8966E]',
     done: 'text-green-600',
     error: 'text-red-500',
@@ -273,6 +286,7 @@ function FileRow({
 
   const borderColor = {
     pending: 'border-stone-200',
+    compressing: 'border-[#B8966E]/30',
     uploading: 'border-[#B8966E]/30',
     done: 'border-green-200',
     error: 'border-red-200',
@@ -289,13 +303,16 @@ function FileRow({
             {item.file.name}
           </p>
           <p className="text-xs text-stone-400">
-            {ACCEPTED_TYPES[item.file.type]} · {(item.file.size / 1024).toFixed(0)} KB
+            {ACCEPTED_TYPES[item.file.type]} · {formatBytes(item.file.size)}
+            {item.uploadedBytes != null && item.uploadedBytes < item.file.size && (
+              <span className="text-stone-400"> → 压缩后 {formatBytes(item.uploadedBytes)}</span>
+            )}
           </p>
         </div>
         <span className={`text-xs font-medium shrink-0 ${labelColor}`}>
           {label}
         </span>
-        {onRemove && item.status !== 'uploading' && (
+        {onRemove && item.status !== 'uploading' && item.status !== 'compressing' && (
           <button
             onClick={onRemove}
             className="text-stone-300 hover:text-stone-500 text-sm shrink-0 ml-1"
