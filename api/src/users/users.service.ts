@@ -71,6 +71,7 @@ export class UsersService {
             email: dto.email,
             address: dto.address,
             bankAccountName: dto.bankAccountName,
+            bankName: dto.bankName,
             bankIban: dto.bankIban?.replace(/\s+/g, '').toUpperCase(),
             bankBic: dto.bankBic,
           },

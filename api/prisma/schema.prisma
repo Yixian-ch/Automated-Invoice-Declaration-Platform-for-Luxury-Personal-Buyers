@@ -62,6 +62,7 @@ model User {
   auditLogs              AuditLog[]
   invoices               Invoice[]
   settlements            CashbackSettlement[]
+  reservations           Reservation[]
   organization           Organization? @relation(fields: [organizationId], references: [id])
 
   @@map("users")
@@ -123,15 +124,73 @@ model Invoice {
   reviewReasons     String[]
   taxRefundAmount   Decimal?         @db.Decimal(12, 2)
   cashbackBreakdown Json?
+  // 预约匹配:匹配成功后记录这张小票算在哪个预约头上(匹配失败被拒的小票为空)
+  reservationId     String?
+  // OCR 提取税号后解析出的商家,单独存一份便于排查匹配问题
+  matchedMerchantId String?
+  // 自动拒绝原因,买手端直接展示此字段
+  rejectReason      String?
   organization      Organization?    @relation(fields: [organizationId], references: [id])
   user              User             @relation(fields: [userId], references: [id])
   settlement        CashbackSettlement?
+  reservation       Reservation?     @relation(fields: [reservationId], references: [id])
+  matchedMerchant   Merchant?        @relation(fields: [matchedMerchantId], references: [id])
 
   @@index([userId])
   @@index([status])
   @@index([purchaseDate])
   @@index([vendorName])
+  @@index([reservationId])
   @@map("invoices")
+}
+
+// ─────────────────────────────────────────────
+// 商家表:预约和小票匹配的锚点
+// ─────────────────────────────────────────────
+model Merchant {
+  id           String        @id @default(cuid())
+  // 商家的法定税号(SIRET,14 位数字)。OCR 从小票提取税号后精准匹配
+  taxId        String        @unique
+  // 买手端下拉列表和预约列表里展示给用户看的名字
+  name         String
+  // 下架商家从预约下拉框消失,但不能删除记录——历史预约和小票还引用着它
+  active       Boolean       @default(true)
+  reservations Reservation[]
+  invoices     Invoice[]
+  createdAt    DateTime      @default(now())
+
+  @@map("merchants")
+}
+
+// ─────────────────────────────────────────────
+// 预约表:全局一张表,每行 = 用户×商家×时间段
+// ─────────────────────────────────────────────
+model Reservation {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+  merchantId  String
+  merchant    Merchant          @relation(fields: [merchantId], references: [id])
+  // 预约时间窗口(存 UTC,业务按 Europe/Paris 解释,精度到天)。
+  // 发票日期必须落在 [startAt, endAt] 闭区间。
+  startAt     DateTime
+  endAt       DateTime
+  // 小票匹配只在 ACCEPTED 的预约里找
+  status      ReservationStatus @default(PENDING)
+  // 后台谁在什么时候通过/拒绝的(审计记录)
+  reviewedAt  DateTime?
+  reviewedBy  String?
+  // 后台拒绝时填写的原因
+  rejectNote  String?
+  // 客户什么时候取消的
+  cancelledAt DateTime?
+  invoices    Invoice[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([userId, status])
+  @@index([merchantId, startAt, endAt])
+  @@map("reservations")
 }
 
 model CashbackSettlement {
@@ -267,6 +326,13 @@ enum InvoiceStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum ReservationStatus {
+  PENDING   // 审核中(创建后默认)
+  ACCEPTED  // 后台通过
+  REJECTED  // 后台拒绝
+  CANCELLED // 客户取消
 }
 
 enum InvoiceCurrency {

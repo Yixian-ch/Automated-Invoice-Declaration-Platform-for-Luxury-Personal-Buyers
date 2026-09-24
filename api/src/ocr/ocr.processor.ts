@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { OcrService } from '../ocr/ocr.service.js';
 import { CashbackService } from '../cashback/cashback.service.js';
 import { OCR_QUEUE } from '../invoice/invoice.service.js';
+import { ReservationService } from '../reservation/reservation.service.js';
 
 interface OcrJobData {
   invoiceId: string;
@@ -21,6 +22,7 @@ export class OcrProcessor {
     private readonly prisma: PrismaService,
     private readonly ocrService: OcrService,
     private readonly cashbackService: CashbackService,
+    private readonly reservationService: ReservationService,
   ) {}
 
   @Process('process-invoice')
@@ -44,7 +46,13 @@ export class OcrProcessor {
         invoice.mimeType ?? 'application/pdf',
       );
 
-      const cashbackResult = result.grandTotalAmount
+      // 预约匹配:没有匹配的已通过预约 → 自动拒绝
+      const match = await this.reservationService.matchInvoice(invoice.userId, {
+        merchantTaxId: result.merchantTaxId ?? null,
+        purchaseDate: result.purchaseDate ?? null,
+      });
+
+      const cashbackResult = match.matched && result.grandTotalAmount
         ? await this.cashbackService.calculate(
             result.vendorName ?? null,
             result.grandTotalAmount,
@@ -61,7 +69,11 @@ export class OcrProcessor {
       await this.prisma.invoice.update({
         where: { id: invoiceId },
         data: {
-          status: 'PENDING',
+          status: match.matched ? 'PENDING' : 'REJECTED',
+          reservationId: match.reservationId,
+          matchedMerchantId: match.merchantId,
+          rejectReason: match.rejectReason,
+          reviewedAt: match.matched ? null : new Date(),
           invoiceNumber: result.invoiceNumber,
           purchaseDate: result.purchaseDate,
           vendorName: result.vendorName,
@@ -77,14 +89,15 @@ export class OcrProcessor {
           cashbackAmount: cashbackResult ? cashbackResult.totalCashback : undefined,
           cashbackBreakdown: cashbackResult ? (cashbackResult.breakdown as any) : undefined,
           ocrConfidence: result.confidence,
-          ocrRawJson: result.rawJson as any,
+          ocrRawJson: { ...result.rawJson, matched_siret: match.siret } as any,
           ocrCompletedAt: new Date(),
         },
       });
 
       this.logger.log(
         `OCR complete for invoice ${invoiceId} — confidence ${result.confidence.toFixed(2)}` +
-          (cashbackResult ? ` — cashback ${cashbackResult.totalCashback.toFixed(2)}€` : ''),
+          (cashbackResult ? ` — cashback ${cashbackResult.totalCashback.toFixed(2)}€` : '') +
+          (match.matched ? ` — reservation ${match.reservationId}` : ` — auto-rejected: ${match.rejectReason}`),
       );
     } catch (err) {
       this.logger.error(`OCR failed for invoice ${invoiceId}: ${String(err)}`);

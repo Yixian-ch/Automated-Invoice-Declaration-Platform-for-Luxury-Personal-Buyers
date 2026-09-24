@@ -149,8 +149,16 @@ export default function InvoiceDetailPage() {
                 </Badge>
               </div>
 
+              {invoice.status === 'REJECTED' && invoice.rejectReason && (
+                <div className="mb-4 border border-red-200 bg-red-50 px-4 py-3">
+                  <p className="text-xs tracking-widest uppercase text-red-500 mb-0.5">拒绝原因</p>
+                  <p className="text-sm text-red-700">{invoice.rejectReason}</p>
+                </div>
+              )}
+
               <div className="divide-y divide-stone-100">
                 <Field label="门店" value={invoice.vendorName} />
+                <Field label="发票号" value={invoice.invoiceNumber} />
                 <Field
                   label="购买日期"
                   value={

@@ -129,6 +129,13 @@ async function main() {
     },
   });
 
+  // ── 合作商家(预约购物 / 小票匹配用,SIRET 取自样票)──────────────────────
+  await prisma.merchant.upsert({
+    where: { taxId: '53775858300059' },
+    update: {},
+    create: { taxId: '53775858300059', name: 'LA SAMARITAINE' },
+  });
+
   console.log(`
 ✓ Seed complete — test accounts (password: ${PASSWORD})
 

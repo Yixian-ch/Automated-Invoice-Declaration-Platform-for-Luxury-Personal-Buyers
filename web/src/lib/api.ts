@@ -185,6 +185,9 @@ export type Invoice = {
   reviewReasons: string[] | null;
   lineItems: LineItem[] | null;
   cashbackBreakdown: CashbackBreakdownItem[] | null;
+  /** 拒绝原因(自动拒绝或后台拒绝),买手端直接展示 */
+  rejectReason: string | null;
+  reservationId: string | null;
   uploadedAt: string | null;
   createdAt: string;
 };
@@ -232,6 +235,45 @@ export const invoiceApi = {
   /** Get single invoice */
   get: (invoiceId: string, token: string) =>
     request<Invoice>(`/invoices/${invoiceId}`, { token }),
+};
+
+// ─── Reservations (预约购物) ──────────────────────────────────────────────────
+
+export type ReservationStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+
+export type MerchantOption = { id: string; name: string };
+
+export type Reservation = {
+  id: string;
+  merchantId: string;
+  merchant: { id: string; name: string };
+  /** UTC ISO;按 Europe/Paris 解释,精度到天 */
+  startAt: string;
+  endAt: string;
+  status: ReservationStatus;
+  reviewedAt: string | null;
+  rejectNote: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+};
+
+export type CreateReservationPayload = {
+  merchantId: string;
+  /** 巴黎日期 YYYY-MM-DD */
+  startDate: string;
+  endDate: string;
+};
+
+export const reservationApi = {
+  merchants: (token: string) => request<MerchantOption[]>('/reservations/merchants', { token }),
+
+  list: (token: string) => request<Reservation[]>('/reservations', { token }),
+
+  create: (token: string, data: CreateReservationPayload) =>
+    request<Reservation>('/reservations', { method: 'POST', body: data, token }),
+
+  cancel: (token: string, id: string) =>
+    request<Reservation>(`/reservations/${id}/cancel`, { method: 'POST', token }),
 };
 
 // ─── Cashback settlements ─────────────────────────────────────────────────────
@@ -292,6 +334,23 @@ export const settlementApi = {
 
 export type AdminInvoice = Invoice & {
   user: { id: string; firstName: string; lastName: string; email: string };
+  matchedMerchant: { id: string; name: string; taxId: string } | null;
+  reservation: { id: string; startAt: string; endAt: string; status: ReservationStatus } | null;
+};
+
+export type AdminReservation = Reservation & {
+  merchant: { id: string; name: string; taxId: string };
+  user: { id: string; firstName: string; lastName: string; email: string };
+  _count: { invoices: number };
+};
+
+export type AdminMerchant = {
+  id: string;
+  taxId: string;
+  name: string;
+  active: boolean;
+  createdAt: string;
+  _count: { reservations: number };
 };
 
 export type ReconciliationRow = {
@@ -436,4 +495,53 @@ export const adminApi = {
       body: rules,
       token,
     }),
+
+  // ─── 预约审核 ───
+  listReservations: (token: string, params?: { status?: ReservationStatus | ''; page?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.page) qs.set('page', String(params.page));
+    return request<{ items: AdminReservation[]; total: number; page: number; limit: number }>(
+      `/admin/reservations?${qs}`,
+      { token },
+    );
+  },
+
+  acceptReservation: (token: string, id: string) =>
+    request<Reservation>(`/admin/reservations/${id}/accept`, { method: 'POST', token }),
+
+  rejectReservation: (token: string, id: string, note: string) =>
+    request<Reservation>(`/admin/reservations/${id}/reject`, { method: 'POST', body: { note }, token }),
+
+  // ─── 商家管理 ───
+  listMerchants: (token: string) => request<AdminMerchant[]>('/admin/merchants', { token }),
+
+  createMerchant: (token: string, data: { name: string; taxId: string }) =>
+    request<AdminMerchant>('/admin/merchants', { method: 'POST', body: data, token }),
+
+  updateMerchant: (
+    token: string,
+    id: string,
+    data: { name?: string; taxId?: string; active?: boolean },
+  ) => request<AdminMerchant>(`/admin/merchants/${id}`, { method: 'PATCH', body: data, token }),
 };
+
+// ─── 日期展示(巴黎时区) ─────────────────────────────────────────────────────
+
+/** 把 UTC ISO 字符串按 Europe/Paris 显示成 YYYY-MM-DD */
+export function formatParisDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/** 巴黎的今天 YYYY-MM-DD */
+export function todayInParis(): string {
+  return formatParisDate(new Date().toISOString());
+}
