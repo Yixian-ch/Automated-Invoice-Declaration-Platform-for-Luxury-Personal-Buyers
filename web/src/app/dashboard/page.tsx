@@ -98,12 +98,36 @@ export default function DashboardPage() {
             </h1>
             <div className="w-8 h-px bg-gold mt-3" />
           </div>
-          <Button
-            onClick={() => router.push('/dashboard/upload')}
-            style={{ backgroundColor: '#B8966E', color: 'white' }}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => router.push('/dashboard/reservations')}
+            >
+              我的预约
+            </Button>
+            <Button
+              onClick={() => router.push('/dashboard/upload')}
+              style={{ backgroundColor: '#B8966E', color: 'white' }}
+            >
+              上传小票
+            </Button>
+          </div>
+        </div>
+
+        {/* 预约规则提醒 */}
+        <div className="border border-[#B8966E]/50 bg-amber-50/60 px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-stone-800">预约十分重要</p>
+            <p className="text-sm text-stone-700">
+              购物前请先预约商家和日期,只有与<strong>已通过</strong>的预约信息一致的购物小票可以申请返点。
+            </p>
+          </div>
+          <button
+            onClick={() => router.push('/dashboard/reservations')}
+            className="text-sm text-[#B8966E] hover:underline whitespace-nowrap"
           >
-            上传小票
-          </Button>
+            去预约 →
+          </button>
         </div>
 
         {/* 统计卡片 */}
@@ -204,6 +228,11 @@ export default function DashboardPage() {
                         <Badge variant={STATUS_VARIANT[inv.status] ?? 'outline'}>
                           {STATUS_LABEL[inv.status] ?? inv.status}
                         </Badge>
+                        {inv.status === 'REJECTED' && inv.rejectReason && (
+                          <p className="text-[11px] text-red-600 mt-1 max-w-[180px] ml-auto">
+                            {inv.rejectReason}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ))}

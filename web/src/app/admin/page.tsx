@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { adminApi, AdminInvoice, LineItem } from '@/lib/api';
+import { adminApi, AdminInvoice, LineItem, formatParisDate } from '@/lib/api';
 import { toast } from 'sonner';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -202,6 +202,9 @@ export default function AdminReviewPage() {
                   <tbody>
                     {[
                       ['门店', selected.vendorName ?? '—'],
+                      ['发票号', selected.invoiceNumber ?? '—'],
+                      ['匹配商家', selected.matchedMerchant ? `${selected.matchedMerchant.name}(${selected.matchedMerchant.taxId})` : '—'],
+                      ['匹配预约', selected.reservation ? `${formatParisDate(selected.reservation.startAt)} ~ ${formatParisDate(selected.reservation.endAt)}` : '—'],
                       ['日期', selected.purchaseDate ? new Date(selected.purchaseDate).toLocaleDateString('zh-CN') : '—'],
                       ['金额', selected.grandTotalAmount ? `${selected.currency ?? ''} ${Number(selected.grandTotalAmount).toFixed(2)}` : '—'],
                       ['OCR 置信度', selected.ocrConfidence != null ? `${(selected.ocrConfidence * 100).toFixed(0)}%` : '—'],

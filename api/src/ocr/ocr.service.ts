@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
+import { findSiretsInText, normalizeSiret } from '../reservation/siret';
 
 export interface OcrLineItem {
   description: string;
@@ -20,6 +21,7 @@ export interface OcrResult {
   grandTotalAmount?: number;
   grandTotalAmountConfidence: number;
   taxRefundAmount?: number;  // Montant de la détaxe (BVE receipts)
+  merchantTaxId?: string;    // 商家 SIRET(14 位),印在 COMMERÇANT 地址下方;用于预约匹配
   // Non-core fields
   buyerName?: string;
   lineItems: OcrLineItem[];
@@ -44,6 +46,10 @@ export interface OcrResult {
 // ─── 正则兜底匹配规则 (保持原样) ────────────────────────
 const BVE_MARKER_RE = /bordereau\s+de\\s+vente|BVE|d[eé]taxe|vente\\s+[àa]\\s+l.export/i;
 const BVE_MERCHANT_HDR_RE = /COMMER[CÇ]ANT|REPRESENT[EÉ]|VENDOR|MERCHANT/i;
+// cerfa 表单编号(所有退税单都一样,不是发票号),例如 "N° 15021*04"
+const CERFA_FORM_NO_RE = /^\s*(?:N\s*[°ºo]?\s*)?\d{5}\s*\*\s*\d{2}\s*$/i;
+// 条形码下方的交易号:18–22 位连续数字(允许数字间有空格)
+const BARCODE_NUMBER_RE = /(?<!\d)(?:\d[ \t]?){17,21}\d(?!\d)/g;
 
 @Injectable()
 export class OcrService {
@@ -76,8 +82,9 @@ You MUST output a single valid JSON object. Do not include markdown codeblocks, 
 
       const userPrompt = `Please extract the following structural data from this invoice or receipt:
 - merchantName (string, name of store e.g., CHANEL, LOUIS VUITTON, GALERIES LAFAYETTE)
-- invoiceNumber (string or null — the invoice / receipt / facture number. It is usually printed after "N°", "No", "Facture", "Ticket", "Reçu" or "Invoice", and on these receipts typically starts with the letter "N" (e.g. "N1234567890"). Return the full identifier exactly as printed, including the leading "N" if shown; null if no such number is present)
-- purchaseDate (string format YYYY-MM-DD)
+- invoiceNumber (string or null — the unique transaction number of this receipt. On French tax-free forms (Bordereau de vente à l'exportation / BVE) it is the LONG numeric string printed directly BELOW the barcode in the top-right corner, about 20 digits, e.g. "25020582499619654442". Return digits only. Do NOT return the cerfa form number such as "N° 15021*04" — that is a form template number shared by every receipt, not the transaction number. On ordinary invoices use the number printed after "N°", "Facture", "Ticket" or "Invoice". null if no such number is present)
+- merchantTaxId (string or null — the merchant's French SIRET: a 14-digit number printed just below the merchant's postal address in the "COMMERÇANT" / merchant block, e.g. "53775858300059". Digits only, no spaces. Do NOT confuse it with the tax-free operator's number in the "OPERATEUR DE DETAXE" block. null if not present)
+- purchaseDate (string format YYYY-MM-DD — on BVE forms use "Date d'émission du BVE")
 - grandTotalAmount (float, the total amount including tax — "Montant total TTC")
 - taxRefundAmount (float or null — the duty-free refund amount labelled "Montant de la détaxe" or "Montant de remboursement" on BVE/détaxe receipts; null if not present)
 - buyerName (string, uppercase full name of the customer/tourist)
@@ -144,6 +151,32 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     };
   }
 
+  /**
+   * 发票号兜底:模型若仍返回 cerfa 表单编号("N° 15021*04")或没返回,
+   * 就从返回文本里找一段 18–22 位的连续数字(条形码下方的交易号)。
+   */
+  private _resolveInvoiceNumber(raw: string | undefined | null, rawText: string): string | undefined {
+    const value = raw ? String(raw).trim() : '';
+    if (value && !CERFA_FORM_NO_RE.test(value)) {
+      // 模型给的是纯数字串时去掉空格
+      return /^[\d\s]+$/.test(value) ? value.replace(/\s+/g, '') : value;
+    }
+    const candidates = (rawText.match(BARCODE_NUMBER_RE) ?? []).map((m) => m.replace(/[ \t]/g, ''));
+    return candidates[0] ?? undefined;
+  }
+
+  /**
+   * SIRET 兜底:模型返回的税号校验不过时,从返回文本里找 Luhn 通过的 14 位数字。
+   * 找不到就原样返回模型的值(交给下游按"照片不清晰"处理)。
+   */
+  private _resolveMerchantTaxId(raw: string | undefined | null, rawText: string): string | undefined {
+    const direct = normalizeSiret(raw);
+    if (direct) return direct;
+    const found = findSiretsInText(rawText);
+    if (found.length > 0) return found[0];
+    return raw ? String(raw).trim() : undefined;
+  }
+
   private _computeConfidence(raw: Record<string, any>): number {
     // Score based on how many of the three required fields were extracted.
     // Each missing field costs ~0.13 points from a 0.90 ceiling.
@@ -160,6 +193,8 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
   private _mapToOcrResult(raw: Record<string, any>, fallbacks: any, rawText: string): OcrResult {
     const merchantName = raw.merchantName || null;
     const confidence = this._computeConfidence(raw);
+    const invoiceNumber = this._resolveInvoiceNumber(raw.invoiceNumber, rawText);
+    const merchantTaxId = this._resolveMerchantTaxId(raw.merchantTaxId, rawText);
     return {
       merchantName,
       merchantNameConfidence: raw.merchantName ? 0.90 : 0.0,
@@ -168,7 +203,8 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       grandTotalAmount: raw.grandTotalAmount ? parseFloat(raw.grandTotalAmount) : undefined,
       grandTotalAmountConfidence: raw.grandTotalAmount ? 0.90 : 0.0,
       taxRefundAmount: raw.taxRefundAmount ? parseFloat(raw.taxRefundAmount) : undefined,
-      invoiceNumber: raw.invoiceNumber ? String(raw.invoiceNumber).trim() : undefined,
+      merchantTaxId,
+      invoiceNumber,
       buyerName: raw.buyerName || null,
       lineItems: (raw.lineItems || []).map((item: any) => ({
         description: item.description || 'Unknown Item',
@@ -185,7 +221,10 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       confidence,
       rawJson: {
         merchant_name: raw.merchantName,
-        invoice_number: raw.invoiceNumber,
+        invoice_number: invoiceNumber,
+        invoice_number_model: raw.invoiceNumber,
+        merchant_tax_id: merchantTaxId,
+        merchant_tax_id_model: raw.merchantTaxId,
         purchase_date: raw.purchaseDate,
         grand_total_amount: raw.grandTotalAmount,
         tax_refund_amount: raw.taxRefundAmount,
@@ -204,7 +243,8 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     return {
       merchantName: 'LA SAMARITAINE',
       merchantNameConfidence: 0.95,
-      invoiceNumber: 'N1234567890',
+      invoiceNumber: '25020582499619654442',
+      merchantTaxId: '53775858300059',
       purchaseDate: new Date('2025-09-21'),
       purchaseDateConfidence: 0.91,
       grandTotalAmount: 10603.0,

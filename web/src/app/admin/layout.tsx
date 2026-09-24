@@ -7,6 +7,8 @@ import { useAuth } from '@/lib/auth-context';
 
 const NAV = [
   { href: '/admin', label: '小票审核' },
+  { href: '/admin/reservations', label: '预约审核' },
+  { href: '/admin/merchants', label: '商家管理' },
   { href: '/admin/data', label: '数据总览' },
   { href: '/admin/reconciliation', label: '账单核对' },
   { href: '/admin/cashback-rates', label: '返点管理' },

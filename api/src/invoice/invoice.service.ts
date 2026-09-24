@@ -90,6 +90,8 @@ export class InvoiceService {
           grandTotalAmount: true,
           cashbackAmount: true,
           ocrConfidence: true,
+          rejectReason: true,
+          reservationId: true,
           uploadedAt: true,
           createdAt: true,
         },
@@ -127,6 +129,8 @@ export class InvoiceService {
           user: {
             select: { id: true, firstName: true, lastName: true, email: true },
           },
+          matchedMerchant: { select: { id: true, name: true, taxId: true } },
+          reservation: { select: { id: true, startAt: true, endAt: true, status: true } },
         },
       }),
       this.prisma.invoice.count({ where }),
@@ -178,6 +182,8 @@ export class InvoiceService {
         reviewedAt: new Date(),
         reviewedById: adminId,
         reviewNote: note,
+        // 一个字段管所有拒绝原因,买手端展示的就是它
+        rejectReason: note,
       },
     });
   }
