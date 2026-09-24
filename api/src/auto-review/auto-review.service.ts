@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InvoiceStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { evaluateInvoiceMatch } from '../reservation/reservation-matcher';
+import { ReservationService } from '../reservation/reservation.service';
 import {
   checkConfidence,
   checkDuplicate,
@@ -46,6 +46,7 @@ export class AutoReviewService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly reservations: ReservationService,
     config: ConfigService,
   ) {
     this.threshold = parseConfidenceThreshold(config.get<string>('OCR_MIN_CONFIDENCE'));
@@ -54,6 +55,41 @@ export class AutoReviewService {
 
   get confidenceThreshold(): number {
     return this.threshold;
+  }
+
+  /**
+   * 落库后的二次核对:两个用户同一时刻上传同一张小票时,各自的预检都看不到对方。
+   * 写入后再查一次,发现跨用户同号且尚未标记 → 补上风控标记。
+   */
+  async flagCrossUserDuplicatesAfterWrite(invoiceId: string, userId: string, barcode: string): Promise<boolean> {
+    const existing = await this.findActiveByBarcode(barcode, invoiceId);
+    const dup = checkDuplicate(userId, existing);
+    if (dup.kind !== 'cross-user') return false;
+
+    const current = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { status: true, reviewReasons: true, fraudFlags: true },
+    });
+    if (!current || current.status === InvoiceStatus.REJECTED) return false;
+    const flags = (current.fraudFlags ?? {}) as Record<string, unknown>;
+    if (flags.duplicateBarcode) return false; // 预检已标记
+
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        needsReview: true,
+        reviewReasons: Array.from(new Set([...(current.reviewReasons ?? []), dup.reviewReason])),
+        fraudFlags: {
+          ...flags,
+          duplicateBarcode: {
+            sameUser: false,
+            invoices: dup.duplicates.map((d) => ({ invoiceId: d.id, userId: d.userId })),
+          },
+        },
+      },
+    });
+    this.logger.warn(`Invoice ${invoiceId}: cross-user duplicate detected after write — flagged`);
+    return true;
   }
 
   /** 与该条形码相同、非拒绝状态、未删除、且不是自己的小票 */
@@ -134,22 +170,10 @@ export class AutoReviewService {
       };
     }
 
-    // ── 规则 3:预约匹配 ──
-    const merchant = await this.prisma.merchant.findUnique({
-      where: { taxId: conf.siret },
-      select: { id: true },
-    });
-    const reservations = merchant
-      ? await this.prisma.reservation.findMany({
-          where: { userId: input.userId, merchantId: merchant.id },
-          select: { id: true, merchantId: true, status: true, startAt: true, endAt: true },
-        })
-      : [];
-    const match = evaluateInvoiceMatch({
+    // ── 规则 3:预约匹配(复用 ReservationService 的查找 + 判定) ──
+    const match = await this.reservations.matchInvoice(input.userId, {
+      merchantTaxId: conf.siret,
       purchaseDate: input.purchaseDate ?? null,
-      siret: conf.siret,
-      merchant,
-      reservations,
     });
     if (!match.matched) {
       this.logger.log(`Invoice ${input.invoiceId}: no reservation match (${match.rejectReason})`);

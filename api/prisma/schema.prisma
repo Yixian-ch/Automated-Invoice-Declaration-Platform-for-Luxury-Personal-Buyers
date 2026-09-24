@@ -138,6 +138,8 @@ model Invoice {
   disputeCategory   String?
   disputeReason     String?
   disputeCount      Int              @default(0)
+  // 客户提出异议时看到的金额快照,复核时用它判断金额是否变化
+  disputedAmount    Decimal?         @db.Decimal(12, 2)
   // 后台处理异议后给客户看的复核说明
   disputeResolutionNote String?
   organization      Organization?    @relation(fields: [organizationId], references: [id])

@@ -123,6 +123,10 @@ export class OcrProcessor {
 
       try {
         await this.prisma.invoice.update({ where: { id: invoiceId }, data });
+        // 并发兜底:两个用户同时上传同一张小票时预检互相看不到,写入后再核对一次
+        if (passed && review.barcode) {
+          await this.autoReview.flagCrossUserDuplicatesAfterWrite(invoiceId, invoice.userId, review.barcode);
+        }
       } catch (err) {
         // 部分唯一索引 (userId, invoiceNumber) WHERE status <> REJECTED 撞上:
         // 同一批里两张同号小票并发处理,后到的按"重复提交"拒绝

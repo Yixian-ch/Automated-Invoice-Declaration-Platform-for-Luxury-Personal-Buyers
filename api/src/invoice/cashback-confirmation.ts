@@ -10,6 +10,7 @@
  * CONFIRMED 后:金额不可改、不可再发起异议。
  */
 
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { InvoiceStatus } from '@prisma/client';
 
 export const DISPUTE_CATEGORIES = ['AMOUNT_WRONG', 'ITEMS_WRONG', 'OTHER'] as const;
@@ -21,13 +22,13 @@ export const DISPUTE_CATEGORY_LABEL: Record<DisputeCategory, string> = {
   OTHER: '其他',
 };
 
-export class ConfirmationError extends Error {
+/** 直接是 HttpException:'conflict' → 409,'bad-request' → 400,控制器无需再映射 */
+export class ConfirmationError extends HttpException {
   constructor(
     message: string,
-    /** 'conflict' → 409;'bad-request' → 400 */
     readonly kind: 'conflict' | 'bad-request',
   ) {
-    super(message);
+    super(message, kind === 'conflict' ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST);
     this.name = 'ConfirmationError';
   }
 }
@@ -49,11 +50,14 @@ export function assertAmountEditable(invoice: { status: InvoiceStatus }): void {
   }
 }
 
-/** 后台"通过":只能从人工队列(PENDING)或异议(DISPUTED)进入待确认 */
+/** 后台"通过":只能从人工队列(PENDING)进入待确认;异议中的小票必须走复核流程 */
 export function assertCanApprove(invoice: { status: InvoiceStatus }): void {
   assertAmountEditable(invoice);
-  if (invoice.status !== InvoiceStatus.PENDING && invoice.status !== InvoiceStatus.DISPUTED) {
-    throw new ConfirmationError('只有待审核或金额异议中的小票可以通过', 'bad-request');
+  if (invoice.status === InvoiceStatus.DISPUTED) {
+    throw new ConfirmationError('金额异议中的小票请通过"处理异议"复核后返回客户确认', 'bad-request');
+  }
+  if (invoice.status !== InvoiceStatus.PENDING) {
+    throw new ConfirmationError('只有待审核的小票可以通过', 'bad-request');
   }
 }
 
@@ -111,7 +115,7 @@ export function assertCanResolveDispute(
   }
 }
 
-/** 客户异议后的字段变化 */
+/** 客户异议后的字段变化(同时快照当时的金额,复核时据此判断是否变化) */
 export function applyDispute(
   invoice: ConfirmableInvoice,
   input: DisputeInput,
@@ -122,6 +126,7 @@ export function applyDispute(
   disputeCategory: string;
   disputeReason: string;
   disputeCount: number;
+  disputedAmount: number;
   needsReview: boolean;
 } {
   assertCanDispute(invoice, input);
@@ -131,6 +136,7 @@ export function applyDispute(
     disputeCategory: input.category,
     disputeReason: input.note.trim(),
     disputeCount: invoice.disputeCount + 1,
+    disputedAmount: Number(invoice.cashbackAmount!.toString()),
     needsReview: true,
   };
 }

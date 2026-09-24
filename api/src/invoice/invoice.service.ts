@@ -15,7 +15,6 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { CashbackService } from '../cashback/cashback.service.js';
 import {
-  ConfirmationError,
   applyConfirm,
   applyDispute,
   assertAmountEditable,
@@ -27,14 +26,6 @@ import { REVIEW_REASON_DISPUTED } from '../auto-review/auto-review.rules.js';
 import type { CorrectInvoiceDto } from './dto/correct-invoice.dto.js';
 
 export const OCR_QUEUE = 'ocr';
-
-/** 把纯逻辑层的错误映射成 HTTP 异常 */
-function rethrow(err: unknown): never {
-  if (err instanceof ConfirmationError) {
-    throw err.kind === 'conflict' ? new ConflictException(err.message) : new BadRequestException(err.message);
-  }
-  throw err;
-}
 
 const VALID_STATUSES = Object.values(InvoiceStatus) as string[];
 
@@ -207,11 +198,7 @@ export class InvoiceService {
   async approve(adminId: string, invoiceId: string, note?: string) {
     const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    try {
-      assertCanApprove(invoice);
-    } catch (e) {
-      rethrow(e);
-    }
+    assertCanApprove(invoice);
 
     const cashbackResult = await this.recomputeCashback(invoice);
     if (!cashbackResult || cashbackResult.totalCashback <= 0) {
@@ -236,11 +223,7 @@ export class InvoiceService {
   async reject(adminId: string, invoiceId: string, note: string) {
     const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    try {
-      assertCanReject(invoice);
-    } catch (e) {
-      rethrow(e);
-    }
+    assertCanReject(invoice);
     return this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
@@ -262,11 +245,7 @@ export class InvoiceService {
   async correctInvoice(invoiceId: string, dto: CorrectInvoiceDto) {
     const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    try {
-      assertAmountEditable(invoice);
-    } catch (e) {
-      rethrow(e);
-    }
+    assertAmountEditable(invoice);
 
     const data: Prisma.InvoiceUncheckedUpdateInput = {};
     if (dto.vendorName !== undefined) data.vendorName = dto.vendorName;
@@ -300,6 +279,14 @@ export class InvoiceService {
     // 异议中的小票保留"需人工介入"标记,直到复核完成;其余更正后清掉
     if (invoice.status !== InvoiceStatus.DISPUTED) data.needsReview = false;
 
+    // 待客户确认的小票被更正 → 金额变了,客户看到的已不作数:退回人工队列重新通过
+    // (也避免更正后返点为空时卡在既确认不了、也通不过的死角)
+    if (invoice.status === InvoiceStatus.AWAITING_CONFIRMATION) {
+      data.status = InvoiceStatus.PENDING;
+      data.reviewedAt = null;
+      data.reviewedById = null;
+    }
+
     return this.prisma.invoice.update({ where: { id: invoiceId }, data });
   }
 
@@ -311,20 +298,21 @@ export class InvoiceService {
     if (!invoice || invoice.deletedAt) throw new NotFoundException('小票不存在');
     if (invoice.userId !== userId) throw new ForbiddenException();
 
-    let patch;
-    try {
-      patch = applyConfirm(invoice);
-    } catch (e) {
-      rethrow(e);
-    }
+    const patch = applyConfirm(invoice);
 
-    // 条件更新:并发点两次只有一次生效
+    // 条件更新:状态和金额都要与客户刚看到的一致。并发点两次只有一次生效;
+    // 后台在客户页面打开后改过金额的话这里不会锁定旧金额
     const res = await this.prisma.invoice.updateMany({
-      where: { id: invoiceId, status: InvoiceStatus.AWAITING_CONFIRMATION },
+      where: {
+        id: invoiceId,
+        status: InvoiceStatus.AWAITING_CONFIRMATION,
+        cashbackAmount: invoice.cashbackAmount!,
+      },
       data: patch,
     });
-    if (res.count === 0) throw new ConflictException('该小票状态已变化,请刷新后重试');
+    if (res.count === 0) throw new ConflictException('该小票的返点金额或状态刚有变化,请刷新后重新核对');
 
+    const locked = await this.prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
     await this.prisma.auditLog.create({
       data: {
         actorId: userId,
@@ -332,10 +320,10 @@ export class InvoiceService {
         resourceType: 'Invoice',
         resourceId: invoiceId,
         userId,
-        meta: { cashbackAmount: invoice.cashbackAmount?.toString() ?? null },
+        meta: { cashbackAmount: locked.cashbackAmount?.toString() ?? null },
       },
     });
-    return this.prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    return locked;
   }
 
   /** 客户"金额有误":AWAITING_CONFIRMATION → DISPUTED,回到人工审核队列 */
@@ -344,12 +332,7 @@ export class InvoiceService {
     if (!invoice || invoice.deletedAt) throw new NotFoundException('小票不存在');
     if (invoice.userId !== userId) throw new ForbiddenException();
 
-    let patch;
-    try {
-      patch = applyDispute(invoice, input);
-    } catch (e) {
-      rethrow(e);
-    }
+    const patch = applyDispute(invoice, input);
 
     const reviewReasons = Array.from(new Set([...(invoice.reviewReasons ?? []), REVIEW_REASON_DISPUTED]));
     const res = await this.prisma.invoice.updateMany({
@@ -383,14 +366,13 @@ export class InvoiceService {
     if (!cashbackResult || cashbackResult.totalCashback <= 0) {
       throw new BadRequestException('无法按规则计算返点,请先更正识别数据');
     }
-    const previous = invoice.cashbackAmount ? Number(invoice.cashbackAmount) : 0;
+    // 与客户提出异议时看到的金额比较(更正识别数据会先改掉 cashbackAmount,不能拿它当基线)
+    const previous = invoice.disputedAmount != null
+      ? Number(invoice.disputedAmount)
+      : invoice.cashbackAmount != null ? Number(invoice.cashbackAmount) : 0;
     const amountChanged = Math.abs(cashbackResult.totalCashback - previous) >= 0.005;
 
-    try {
-      assertCanResolveDispute(invoice, { amountChanged, note });
-    } catch (e) {
-      rethrow(e);
-    }
+    assertCanResolveDispute(invoice, { amountChanged, note });
 
     const reviewReasons = (invoice.reviewReasons ?? []).filter((r) => r !== REVIEW_REASON_DISPUTED);
     const updated = await this.prisma.invoice.update({

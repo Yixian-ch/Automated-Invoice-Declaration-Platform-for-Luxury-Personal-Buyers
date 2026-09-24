@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
 import { findSiretsInText, normalizeSiret } from '../reservation/siret';
+import { normalizeUnitScore } from '../auto-review/auto-review.rules';
 
 export interface OcrLineItem {
   description: string;
@@ -183,11 +184,8 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
 
   /** 模型返回的图片质量分:接受 0–1 或 0–100,其他 → undefined(不单独否决) */
   private _parseImageQuality(raw: unknown): number | undefined {
-    const n = typeof raw === 'string' ? parseFloat(raw) : raw;
-    if (typeof n !== 'number' || !Number.isFinite(n)) return undefined;
-    const v = n > 1 ? n / 100 : n;
-    if (v < 0 || v > 1) return undefined;
-    return parseFloat(v.toFixed(3));
+    const v = normalizeUnitScore(raw);
+    return v === null ? undefined : parseFloat(v.toFixed(3));
   }
 
   private _computeConfidence(raw: Record<string, any>): number {

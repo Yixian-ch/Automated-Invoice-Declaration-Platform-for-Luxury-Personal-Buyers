@@ -69,7 +69,7 @@ describe('客户确认', () => {
 });
 
 describe('客户异议', () => {
-  it('AWAITING_CONFIRMATION → DISPUTED,disputeCount+1,记录原因,回人工队列', () => {
+  it('AWAITING_CONFIRMATION → DISPUTED,disputeCount+1,记录原因与金额快照,回人工队列', () => {
     const now = new Date('2026-02-01T10:00:00Z');
     expect(applyDispute(inv(InvoiceStatus.AWAITING_CONFIRMATION, { disputeCount: 1 }), { ...DISPUTE, note: '  返点比例不对 ' }, now)).toEqual({
       status: InvoiceStatus.DISPUTED,
@@ -77,6 +77,7 @@ describe('客户异议', () => {
       disputeCategory: 'AMOUNT_WRONG',
       disputeReason: '返点比例不对',
       disputeCount: 2,
+      disputedAmount: 123.45,
       needsReview: true,
     });
   });
@@ -106,8 +107,23 @@ describe('客户异议', () => {
 });
 
 describe('后台处理异议', () => {
-  it('DISPUTED 可以"通过"重新进入待确认', () => {
-    expect(() => assertCanApprove(inv(InvoiceStatus.DISPUTED))).not.toThrow();
+  it('DISPUTED 不能走普通"通过",必须走复核流程', () => {
+    expect(() => assertCanApprove(inv(InvoiceStatus.DISPUTED))).toThrow(/处理异议/);
+    expect(() => assertCanApprove(inv(InvoiceStatus.PENDING))).not.toThrow();
+    expect(() => assertCanApprove(inv(InvoiceStatus.AWAITING_CONFIRMATION))).toThrow(/只有待审核/);
+  });
+
+  it('ConfirmationError 直接携带 HTTP 状态码', () => {
+    try {
+      assertCanApprove(inv(InvoiceStatus.CONFIRMED));
+    } catch (e) {
+      expect((e as ConfirmationError).getStatus()).toBe(409);
+    }
+    try {
+      assertCanApprove(inv(InvoiceStatus.DISPUTED));
+    } catch (e) {
+      expect((e as ConfirmationError).getStatus()).toBe(400);
+    }
   });
 
   it('维持原金额时必须填复核说明', () => {

@@ -2,6 +2,7 @@ import {
   checkConfidence,
   checkDuplicate,
   normalizeBarcode,
+  normalizeUnitScore,
   parseConfidenceThreshold,
   REJECT_REASON_DUPLICATE,
   REJECT_REASON_UNCLEAR_PHOTO,
@@ -72,7 +73,7 @@ describe('normalizeBarcode', () => {
   });
 });
 
-describe('parseConfidenceThreshold', () => {
+describe('parseConfidenceThreshold / normalizeUnitScore', () => {
   it('支持 0.8 / 80 / 空 / 非法', () => {
     expect(parseConfidenceThreshold('0.8')).toBe(0.8);
     expect(parseConfidenceThreshold('80')).toBe(0.8);
@@ -81,6 +82,16 @@ describe('parseConfidenceThreshold', () => {
     expect(parseConfidenceThreshold('')).toBe(0.8);
     expect(parseConfidenceThreshold('abc')).toBe(0.8);
     expect(parseConfidenceThreshold('-1')).toBe(0.8);
+  });
+
+  it('(1, 2) 之间与 >100 视为非法,不会被误当成百分数', () => {
+    expect(normalizeUnitScore(1.5)).toBeNull();
+    expect(normalizeUnitScore(1.2)).toBeNull();
+    expect(normalizeUnitScore(101)).toBeNull();
+    expect(normalizeUnitScore(1)).toBe(1);
+    expect(normalizeUnitScore(2)).toBe(0.02);
+    expect(normalizeUnitScore('95')).toBe(0.95);
+    expect(parseConfidenceThreshold('1.5')).toBe(0.8); // 回退默认,不会把阈值降到 0.015
   });
 });
 

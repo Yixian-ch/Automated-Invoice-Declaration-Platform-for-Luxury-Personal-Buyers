@@ -12,6 +12,7 @@ ALTER TABLE "invoices"
   ADD COLUMN "disputeCategory" TEXT,
   ADD COLUMN "disputeReason" TEXT,
   ADD COLUMN "disputeCount" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "disputedAmount" DECIMAL(12,2),
   ADD COLUMN "disputeResolutionNote" TEXT;
 
 CREATE INDEX "invoices_invoiceNumber_idx" ON "invoices"("invoiceNumber");

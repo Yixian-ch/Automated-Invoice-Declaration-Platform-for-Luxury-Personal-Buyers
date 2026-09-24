@@ -93,8 +93,8 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  // 只有客户确认后金额才是最终值;审核中/异议中显示"预估"
-  const isApproved = invoice.status === 'CONFIRMED' || invoice.status === 'AWAITING_CONFIRMATION' || invoice.status === 'APPROVED';
+  // 只有客户确认后金额才是最终值;确认前(含待确认)后台仍可能更正,一律显示"预估"
+  const isApproved = invoice.status === 'CONFIRMED' || invoice.status === 'APPROVED';
   const imageUrl = `${API_BASE}/api/v1/invoices/${id}/image`;
   const currency = invoice.currency ?? '€';
   const breakdown = invoice.cashbackBreakdown ?? [];

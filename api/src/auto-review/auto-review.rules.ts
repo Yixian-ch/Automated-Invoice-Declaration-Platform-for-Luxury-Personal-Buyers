@@ -101,12 +101,20 @@ export function checkDuplicate(userId: string, existing: ExistingInvoiceRef[]): 
   };
 }
 
+/**
+ * 把"0–1 的比例"或"0–100 的百分数"统一成 0–1。
+ * [0, 1] 原样;[2, 100] 视为百分数;(1, 2) 和其他一律视为非法 → null。
+ */
+export function normalizeUnitScore(raw: unknown): number | null {
+  const n = typeof raw === 'string' ? parseFloat(raw) : raw;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  if (n >= 0 && n <= 1) return n;
+  if (n >= 2 && n <= 100) return n / 100;
+  return null;
+}
+
 /** 阈值解析:环境变量字符串 → 0–1 的数;非法则用默认值 */
 export function parseConfidenceThreshold(raw: string | undefined, fallback = DEFAULT_MIN_CONFIDENCE): number {
   if (raw === undefined || raw === '') return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return fallback;
-  // 允许写成 80 或 0.8
-  const v = n > 1 ? n / 100 : n;
-  return v >= 0 && v <= 1 ? v : fallback;
+  return normalizeUnitScore(raw) ?? fallback;
 }

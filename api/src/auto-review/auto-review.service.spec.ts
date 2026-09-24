@@ -4,6 +4,7 @@
  */
 import { InvoiceStatus } from '@prisma/client';
 import { AutoReviewService } from './auto-review.service';
+import { ReservationService } from '../reservation/reservation.service';
 import {
   REJECT_REASON_DUPLICATE,
   REJECT_REASON_UNCLEAR_PHOTO,
@@ -16,7 +17,17 @@ const SIRET = '53775858300059';
 const MERCHANT_ID = 'm_samaritaine';
 const BARCODE = '25020582499619654879';
 
-type FakeInvoice = { id: string; userId: string; invoiceNumber: string | null; status: InvoiceStatus; deletedAt: Date | null; createdAt: Date };
+type FakeInvoice = {
+  id: string;
+  userId: string;
+  invoiceNumber: string | null;
+  status: InvoiceStatus;
+  deletedAt: Date | null;
+  createdAt: Date;
+  needsReview?: boolean;
+  reviewReasons?: string[];
+  fraudFlags?: Record<string, unknown> | null;
+};
 
 /** 极简内存版 Prisma:只实现流水线用到的三个查询 */
 function fakePrisma(state: {
@@ -34,6 +45,15 @@ function fakePrisma(state: {
           .filter((i) => i.deletedAt === null)
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
           .map((i) => ({ id: i.id, userId: i.userId })),
+      findUnique: async ({ where }: any) => {
+        const i = state.invoices.find((x) => x.id === where.id);
+        return i ? { status: i.status, reviewReasons: i.reviewReasons ?? [], fraudFlags: i.fraudFlags ?? null } : null;
+      },
+      update: async ({ where, data }: any) => {
+        const i = state.invoices.find((x) => x.id === where.id)!;
+        Object.assign(i, data);
+        return i;
+      },
     },
     merchant: {
       findUnique: async ({ where }: any) => {
@@ -51,6 +71,12 @@ function fakePrisma(state: {
 }
 
 const fakeConfig = (threshold?: string) => ({ get: () => threshold }) as any;
+
+/** 规则 3 复用 ReservationService,同一个假 Prisma 注入两处 */
+function makeService(state: ReturnType<typeof makeState>, threshold?: string) {
+  const prisma = fakePrisma(state);
+  return new AutoReviewService(prisma, new ReservationService(prisma), fakeConfig(threshold));
+}
 
 function acceptedReservation(userId: string, start: string, end: string, id = `r_${userId}`) {
   return { id, userId, merchantId: MERCHANT_ID, status: 'ACCEPTED', startAt: parisDayStart(start), endAt: parisDayEnd(end) };
@@ -76,7 +102,7 @@ function makeState() {
 
 describe('AutoReviewService.review', () => {
   it('全部通过 → PENDING,带预约与商家', async () => {
-    const svc = new AutoReviewService(fakePrisma(makeState()), fakeConfig());
+    const svc = makeService(makeState());
     const out = await svc.review(goodInput('inv_1', 'user_a'));
     expect(out).toMatchObject({
       status: InvoiceStatus.PENDING,
@@ -93,7 +119,7 @@ describe('AutoReviewService.review', () => {
   it('顺序:置信度先于去重 — 模糊照片即使条形码重复也按"照片不清晰"拒', async () => {
     const state = makeState();
     state.invoices.push({ id: 'inv_0', userId: 'user_a', invoiceNumber: BARCODE, status: InvoiceStatus.PENDING, deletedAt: null, createdAt: new Date() });
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
     const out = await svc.review(goodInput('inv_1', 'user_a', { imageQuality: 0.5 }));
     expect(out).toMatchObject({ status: InvoiceStatus.REJECTED, rejectedBy: 'confidence', rejectReason: REJECT_REASON_UNCLEAR_PHOTO });
   });
@@ -102,20 +128,20 @@ describe('AutoReviewService.review', () => {
     const state = makeState();
     state.reservations = [];
     state.invoices.push({ id: 'inv_0', userId: 'user_a', invoiceNumber: BARCODE, status: InvoiceStatus.PENDING, deletedAt: null, createdAt: new Date() });
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
     const out = await svc.review(goodInput('inv_1', 'user_a'));
     expect(out).toMatchObject({ status: InvoiceStatus.REJECTED, rejectedBy: 'duplicate', rejectReason: REJECT_REASON_DUPLICATE });
   });
 
   it('条形码提取失败 → 拒绝"照片不清晰",不进去重', async () => {
-    const svc = new AutoReviewService(fakePrisma(makeState()), fakeConfig());
+    const svc = makeService(makeState());
     const out = await svc.review(goodInput('inv_1', 'user_a', { barcode: null }));
     expect(out).toMatchObject({ status: InvoiceStatus.REJECTED, rejectedBy: 'confidence', rejectReason: REJECT_REASON_UNCLEAR_PHOTO });
     expect(out.barcode).toBeNull();
   });
 
   it('阈值来自配置:OCR_MIN_CONFIDENCE=0.9 时 0.85 拒绝', async () => {
-    const svc = new AutoReviewService(fakePrisma(makeState()), fakeConfig('0.9'));
+    const svc = makeService(makeState(), '0.9');
     expect(svc.confidenceThreshold).toBe(0.9);
     const out = await svc.review(goodInput('inv_1', 'user_a', { imageQuality: 0.85 }));
     expect(out.rejectedBy).toBe('confidence');
@@ -124,7 +150,7 @@ describe('AutoReviewService.review', () => {
   it('同用户与已拒绝小票同号 → 不算重复(已拒绝记录不占用编号)', async () => {
     const state = makeState();
     state.invoices.push({ id: 'inv_old', userId: 'user_a', invoiceNumber: BARCODE, status: InvoiceStatus.REJECTED, deletedAt: null, createdAt: new Date() });
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
     const out = await svc.review(goodInput('inv_1', 'user_a'));
     expect(out.status).toBe(InvoiceStatus.PENDING);
     expect(out.rejectedBy).toBeNull();
@@ -139,7 +165,7 @@ describe('AutoReviewService.review', () => {
   ])('同用户与 %s 状态的小票同号 → 拒绝"小票重复提交"', async (status) => {
     const state = makeState();
     state.invoices.push({ id: 'inv_old', userId: 'user_a', invoiceNumber: BARCODE, status, deletedAt: null, createdAt: new Date() });
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
     const out = await svc.review(goodInput('inv_1', 'user_a'));
     expect(out).toMatchObject({ status: InvoiceStatus.REJECTED, rejectedBy: 'duplicate', rejectReason: REJECT_REASON_DUPLICATE });
     expect(out.fraudFlags).toMatchObject({ duplicateBarcode: { invoiceId: 'inv_old', sameUser: true } });
@@ -148,7 +174,7 @@ describe('AutoReviewService.review', () => {
   it('跨用户撞号 → 不拒绝,转人工并标记风控', async () => {
     const state = makeState();
     state.invoices.push({ id: 'inv_b', userId: 'user_b', invoiceNumber: BARCODE, status: InvoiceStatus.PENDING, deletedAt: null, createdAt: new Date() });
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
     const out = await svc.review(goodInput('inv_1', 'user_a'));
     expect(out.status).toBe(InvoiceStatus.PENDING);
     expect(out.needsReview).toBe(true);
@@ -162,7 +188,7 @@ describe('AutoReviewService.review', () => {
   it('跨用户撞号但对方已被拒绝 → 不标记', async () => {
     const state = makeState();
     state.invoices.push({ id: 'inv_b', userId: 'user_b', invoiceNumber: BARCODE, status: InvoiceStatus.REJECTED, deletedAt: null, createdAt: new Date() });
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
     const out = await svc.review(goodInput('inv_1', 'user_a'));
     expect(out.needsReview).toBe(false);
     expect(out.fraudFlags).toBeNull();
@@ -171,14 +197,14 @@ describe('AutoReviewService.review', () => {
   it('无匹配预约 → 拒绝"非预约时间/商铺购物不予返点"', async () => {
     const state = makeState();
     state.reservations = [];
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
     const out = await svc.review(goodInput('inv_1', 'user_a'));
     expect(out).toMatchObject({ status: InvoiceStatus.REJECTED, rejectedBy: 'reservation', rejectReason: REJECT_REASON_NO_RESERVATION, matchedMerchantId: MERCHANT_ID });
   });
 
   it('批量上传含重复:逐张处理,首张有效、重复的单独拒绝、不牵连整批', async () => {
     const state = makeState();
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
 
     // 同一批 4 张:A、A(重复)、B、C
     const batch = [
@@ -206,9 +232,35 @@ describe('AutoReviewService.review', () => {
     });
   });
 
+  it('并发兜底:两个用户同时上传同一张,预检都没看到对方 → 写入后二次核对补上标记', async () => {
+    const state = makeState();
+    const svc = makeService(state);
+
+    // 两张都先跑预检(此时彼此的条形码都还没落库)
+    const outA = await svc.review(goodInput('inv_a', 'user_a'));
+    const outB = await svc.review(goodInput('inv_b', 'user_b'));
+    expect(outA.needsReview).toBe(false);
+    expect(outB.needsReview).toBe(false);
+
+    // 模拟各自落库
+    state.invoices.push({ id: 'inv_a', userId: 'user_a', invoiceNumber: BARCODE, status: outA.status, deletedAt: null, createdAt: new Date(), reviewReasons: [], fraudFlags: null });
+    state.invoices.push({ id: 'inv_b', userId: 'user_b', invoiceNumber: BARCODE, status: outB.status, deletedAt: null, createdAt: new Date(), reviewReasons: [], fraudFlags: null });
+
+    // 写后核对:两张都应被标记
+    expect(await svc.flagCrossUserDuplicatesAfterWrite('inv_a', 'user_a', BARCODE)).toBe(true);
+    expect(await svc.flagCrossUserDuplicatesAfterWrite('inv_b', 'user_b', BARCODE)).toBe(true);
+    const a = state.invoices.find((i) => i.id === 'inv_a')!;
+    expect(a.needsReview).toBe(true);
+    expect(a.reviewReasons).toEqual([REVIEW_REASON_CROSS_USER_DUPLICATE]);
+    expect(a.fraudFlags).toEqual({ duplicateBarcode: { sameUser: false, invoices: [{ invoiceId: 'inv_b', userId: 'user_b' }] } });
+
+    // 已标记过的不会重复标记
+    expect(await svc.flagCrossUserDuplicatesAfterWrite('inv_a', 'user_a', BARCODE)).toBe(false);
+  });
+
   it('客户因照片模糊被拒后重拍同一张 → 不被判为重复(不会死循环)', async () => {
     const state = makeState();
-    const svc = new AutoReviewService(fakePrisma(state), fakeConfig());
+    const svc = makeService(state);
 
     // 第一次:模糊 → 拒绝,但条形码已存下
     state.invoices.push({ id: 'inv_blur', userId: 'user_a', invoiceNumber: null, status: InvoiceStatus.PENDING, deletedAt: null, createdAt: new Date() });

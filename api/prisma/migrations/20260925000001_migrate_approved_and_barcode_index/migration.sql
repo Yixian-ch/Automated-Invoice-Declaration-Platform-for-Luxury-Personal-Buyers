@@ -9,8 +9,17 @@ FROM "cashback_settlements" s
 WHERE s."invoiceId" = i."id"
   AND i."status" = 'APPROVED';
 
+--    没有可确认的返点金额的(空或 0)回到人工队列,否则客户确认不了、后台也通不过
 UPDATE "invoices"
 SET "status" = 'AWAITING_CONFIRMATION'
+WHERE "status" = 'APPROVED'
+  AND "cashbackAmount" IS NOT NULL
+  AND "cashbackAmount" > 0;
+
+UPDATE "invoices"
+SET "status" = 'PENDING',
+    "needsReview" = true,
+    "reviewReasons" = array_append("reviewReasons", '旧通过记录无返点金额,需重新审核')
 WHERE "status" = 'APPROVED';
 
 -- 2) 旧 OCR 提取的 cerfa 表单号("N° 15021*04",所有退税单相同)不是条形码号,
