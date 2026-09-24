@@ -30,7 +30,7 @@ export class AdminService {
 
   /**
    * GROUP BY merchantName + date, compare SUM(grandTotalAmount) against merchant_bills.
-   * Only APPROVED invoices are included.
+   * Only CONFIRMED invoices (customer-confirmed cashback) are included.
    */
   async getReconciliation(): Promise<ReconciliationRow[]> {
     const rows = await this.prisma.$queryRaw<ReconciliationRow[]>`
@@ -48,7 +48,7 @@ export class AdminService {
       JOIN merchant_bills mb
         ON i."vendorName" = mb."merchantName"
         AND DATE(i."purchaseDate") = mb.date
-      WHERE i.status = 'APPROVED'
+      WHERE i.status = 'CONFIRMED'
         AND i."vendorName" IS NOT NULL
         AND i."purchaseDate" IS NOT NULL
         AND i."grandTotalAmount" IS NOT NULL
@@ -79,7 +79,7 @@ export class AdminService {
       JOIN users u ON i."userId" = u.id
       WHERE i."vendorName" = ${merchantName}
         AND DATE(i."purchaseDate") = ${date}::date
-        AND i.status = 'APPROVED'
+        AND i.status = 'CONFIRMED'
       ORDER BY i."purchaseDate" DESC
     `;
     return rows;

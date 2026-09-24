@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { invoiceApi } from '@/lib/api';
@@ -14,7 +14,7 @@ const ACCEPTED_TYPES: Record<string, string> = {
 };
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
-type FileStatus = 'pending' | 'uploading' | 'done' | 'error' | 'duplicate';
+type FileStatus = 'pending' | 'uploading' | 'done' | 'error';
 
 type FileItem = {
   id: string;
@@ -31,19 +31,9 @@ export default function UploadPage() {
   const [items, setItems] = useState<FileItem[]>([]);
   const [running, setRunning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [uploadedFilenames, setUploadedFilenames] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!accessToken) return;
-    invoiceApi.list(accessToken, 1).then((res) => {
-      const names = new Set(
-        res.items.map((inv) => inv.originalFilename).filter(Boolean) as string[],
-      );
-      setUploadedFilenames(names);
-    }).catch(() => {});
-  }, [accessToken]);
-
+  // 去重不再按文件名判断:服务端 OCR 后按小票条形码号全局去重
   const addFiles = useCallback((incoming: File[]) => {
     const valid: File[] = [];
     for (const f of incoming) {
@@ -59,22 +49,16 @@ export default function UploadPage() {
     }
     if (!valid.length) return;
 
-    setItems((prev) => {
-      const existingNames = new Set(prev.map((i) => i.file.name));
-      const newItems: FileItem[] = [];
-      for (const f of valid) {
-        const isDup = uploadedFilenames.has(f.name) || existingNames.has(f.name);
-        newItems.push({
-          id: Math.random().toString(36).slice(2),
-          file: f,
-          status: isDup ? 'duplicate' : 'pending',
-          progress: 0,
-        });
-        existingNames.add(f.name);
-      }
-      return [...prev, ...newItems];
-    });
-  }, [uploadedFilenames]);
+    setItems((prev) => [
+      ...prev,
+      ...valid.map<FileItem>((f) => ({
+        id: Math.random().toString(36).slice(2),
+        file: f,
+        status: 'pending',
+        progress: 0,
+      })),
+    ]);
+  }, []);
 
   const removeItem = (id: string) => {
     setItems((prev) => prev.filter((i) => i.id !== id));
@@ -112,7 +96,6 @@ export default function UploadPage() {
         );
 
         updateItem(item.id, { status: 'done', progress: 100 });
-        setUploadedFilenames((prev) => new Set(prev).add(item.file.name));
       } catch (err) {
         updateItem(item.id, {
           status: 'error',
@@ -129,7 +112,7 @@ export default function UploadPage() {
   const errorCount = items.filter((i) => i.status === 'error').length;
   const allSettled =
     items.length > 0 &&
-    items.every((i) => i.status === 'done' || i.status === 'error' || i.status === 'duplicate');
+    items.every((i) => i.status === 'done' || i.status === 'error');
 
   return (
     <div className="min-h-screen bg-[#FAF9F7] flex flex-col">
@@ -224,10 +207,19 @@ export default function UploadPage() {
                 {doneCount} 张小票上传成功
                 {errorCount > 0 && `，${errorCount} 张失败`}
               </p>
-              {doneCount > 0 && errorCount === 0 && (
+              {doneCount > 0 && (
                 <p className="text-sm text-green-700 mt-1">
-                  已进入 OCR 识别队列。
+                  已进入识别与自动审核队列,可以离开本页。识别完成后请到工作台查看每张小票的结果:
+                  照片不清晰、重复提交或非预约购物的小票会被自动拒绝并注明原因。
                 </p>
+              )}
+              {doneCount > 0 && (
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  className="mt-3 text-sm text-[#B8966E] hover:underline"
+                >
+                  返回工作台 →
+                </button>
               )}
             </div>
           )}
@@ -247,7 +239,8 @@ export default function UploadPage() {
           </Button>
 
           <p className="text-xs text-stone-400 text-center leading-relaxed">
-            小票存储于服务器。OCR 自动提取关键字段，审核员将在 2 个工作日内完成审核。
+            上传后系统自动识别并校验(照片清晰度、条形码去重、预约匹配),通过后审核员将在 2 个工作日内完成审核。
+            同一张小票请勿重复上传;照片请拍摄完整、清晰、无反光。
           </p>
         </div>
       </main>
@@ -269,7 +262,6 @@ function FileRow({
     uploading: `${item.progress}%`,
     done: '完成 ✓',
     error: item.error ?? '上传失败',
-    duplicate: '已上传过',
   }[item.status];
 
   const labelColor = {
@@ -277,7 +269,6 @@ function FileRow({
     uploading: 'text-[#B8966E]',
     done: 'text-green-600',
     error: 'text-red-500',
-    duplicate: 'text-amber-500',
   }[item.status];
 
   const borderColor = {
@@ -285,7 +276,6 @@ function FileRow({
     uploading: 'border-[#B8966E]/30',
     done: 'border-green-200',
     error: 'border-red-200',
-    duplicate: 'border-amber-200',
   }[item.status];
 
   return (

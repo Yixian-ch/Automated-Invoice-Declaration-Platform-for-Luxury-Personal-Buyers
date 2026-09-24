@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
 import { findSiretsInText, normalizeSiret } from '../reservation/siret';
+import { normalizeUnitScore } from '../auto-review/auto-review.rules';
 
 export interface OcrLineItem {
   description: string;
@@ -22,6 +23,7 @@ export interface OcrResult {
   grandTotalAmountConfidence: number;
   taxRefundAmount?: number;  // Montant de la détaxe (BVE receipts)
   merchantTaxId?: string;    // 商家 SIRET(14 位),印在 COMMERÇANT 地址下方;用于预约匹配
+  imageQuality?: number;     // 模型自评图片清晰度/可读性 0–1;自动审核规则 1 用
   // Non-core fields
   buyerName?: string;
   lineItems: OcrLineItem[];
@@ -87,6 +89,7 @@ You MUST output a single valid JSON object. Do not include markdown codeblocks, 
 - merchantTaxId (string or null — the merchant's French SIRET: a 14-digit number printed just below the merchant's postal address in the "COMMERÇANT" / merchant block, e.g. "53775858300059". Digits only, no spaces. Do NOT confuse it with the tax-free operator's number in the "OPERATEUR DE DETAXE" block. null if not present)
 - purchaseDate (string format YYYY-MM-DD — on BVE forms use "Date d'émission du BVE")
 - rawText (string — a plain-text transcription of ALL printed text on the receipt, line by line, in reading order, including every number exactly as printed. This is used as a fallback when a field above cannot be located)
+- imageQuality (number between 0 and 1 — your honest assessment of how legible the photo is: 1.0 = sharp, evenly lit, fully in frame, every digit unambiguous; 0.8 = readable with minor blur/glare; below 0.8 = parts are blurry, cut off, too dark, or digits could be misread; below 0.5 = mostly unreadable. Be strict: if you had to guess any digit of the barcode number, SIRET, date or total, score below 0.8)
 - grandTotalAmount (float, the total amount including tax — "Montant total TTC")
 - taxRefundAmount (float or null — the duty-free refund amount labelled "Montant de la détaxe" or "Montant de remboursement" on BVE/détaxe receipts; null if not present)
 - buyerName (string, uppercase full name of the customer/tourist)
@@ -179,6 +182,12 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     return raw ? String(raw).trim() : undefined;
   }
 
+  /** 模型返回的图片质量分:接受 0–1 或 0–100,其他 → undefined(不单独否决) */
+  private _parseImageQuality(raw: unknown): number | undefined {
+    const v = normalizeUnitScore(raw);
+    return v === null ? undefined : parseFloat(v.toFixed(3));
+  }
+
   private _computeConfidence(raw: Record<string, any>): number {
     // Score based on how many of the three required fields were extracted.
     // Each missing field costs ~0.13 points from a 0.90 ceiling.
@@ -199,7 +208,9 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     const receiptText = typeof raw.rawText === 'string' && raw.rawText.trim() ? raw.rawText : rawText;
     const invoiceNumber = this._resolveInvoiceNumber(raw.invoiceNumber, receiptText);
     const merchantTaxId = this._resolveMerchantTaxId(raw.merchantTaxId, receiptText);
+    const imageQuality = this._parseImageQuality(raw.imageQuality);
     return {
+      imageQuality,
       merchantName,
       merchantNameConfidence: raw.merchantName ? 0.90 : 0.0,
       purchaseDate: raw.purchaseDate ? new Date(raw.purchaseDate) : undefined,
@@ -229,6 +240,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         invoice_number_model: raw.invoiceNumber,
         merchant_tax_id: merchantTaxId,
         merchant_tax_id_model: raw.merchantTaxId,
+        image_quality: imageQuality,
         purchase_date: raw.purchaseDate,
         grand_total_amount: raw.grandTotalAmount,
         tax_refund_amount: raw.taxRefundAmount,
@@ -250,6 +262,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       merchantNameConfidence: 0.95,
       invoiceNumber: '25020582499619654442',
       merchantTaxId: '53775858300059',
+      imageQuality: 0.95,
       purchaseDate: new Date('2025-09-21'),
       purchaseDateConfidence: 0.91,
       grandTotalAmount: 10603.0,

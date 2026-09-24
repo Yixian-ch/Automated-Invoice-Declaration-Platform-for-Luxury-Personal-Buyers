@@ -10,6 +10,7 @@ import { OcrProcessor } from '../ocr/ocr.processor';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CashbackModule } from '../cashback/cashback.module';
 import { ReservationModule } from '../reservation/reservation.module';
+import { AutoReviewModule } from '../auto-review/auto-review.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ReservationModule } from '../reservation/reservation.module';
     OcrModule,
     CashbackModule,
     ReservationModule,
+    AutoReviewModule,
     BullModule.registerQueueAsync({
       name: OCR_QUEUE,
       imports: [ConfigModule],

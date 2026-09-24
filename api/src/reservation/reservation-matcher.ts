@@ -14,7 +14,8 @@
 import { compareYmd, toParisDateString } from './paris-time';
 
 export const REJECT_REASON_NO_RESERVATION = '非预约时间/商铺购物不予返点';
-export const REJECT_REASON_UNREADABLE = '照片不清晰';
+/** 与自动审核规则 1 的文案一致(邀请重传) */
+export const REJECT_REASON_UNREADABLE = '照片不清晰,请重新拍摄上传';
 
 export type ReservationStatusLike = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
 

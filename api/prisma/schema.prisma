@@ -130,6 +130,18 @@ model Invoice {
   matchedMerchantId String?
   // 自动拒绝原因,买手端直接展示此字段
   rejectReason      String?
+  // 模型自评的图片清晰度/可读性(0–1),规则 1"照片置信度"用它判定
+  imageQuality      Float?
+  // 客户确认返点金额:AWAITING_CONFIRMATION → CONFIRMED(金额锁定)/ DISPUTED
+  confirmedAt       DateTime?
+  disputedAt        DateTime?
+  disputeCategory   String?
+  disputeReason     String?
+  disputeCount      Int              @default(0)
+  // 客户提出异议时看到的金额快照,复核时用它判断金额是否变化
+  disputedAmount    Decimal?         @db.Decimal(12, 2)
+  // 后台处理异议后给客户看的复核说明
+  disputeResolutionNote String?
   organization      Organization?    @relation(fields: [organizationId], references: [id])
   user              User             @relation(fields: [userId], references: [id])
   settlement        CashbackSettlement?
@@ -141,6 +153,10 @@ model Invoice {
   @@index([purchaseDate])
   @@index([vendorName])
   @@index([reservationId])
+  // 条形码去重:invoiceNumber = 条形码下方数字串。另有部分唯一索引
+  // invoices_user_barcode_active_key (userId, invoiceNumber) WHERE status <> 'REJECTED'
+  // 在迁移 SQL 里手写(Prisma 不支持 partial index)。
+  @@index([invoiceNumber])
   @@map("invoices")
 }
 
@@ -323,9 +339,12 @@ enum SettlementStatus {
 }
 
 enum InvoiceStatus {
-  PENDING
-  APPROVED
-  REJECTED
+  PENDING                // 人工审核中(自动审核通过后)
+  APPROVED               // 旧状态,保留兼容;后台通过后直接进 AWAITING_CONFIRMATION
+  REJECTED               // 自动或人工拒绝
+  AWAITING_CONFIRMATION  // 待客户确认返点金额
+  CONFIRMED              // 客户已确认,金额锁定,可选结算方式
+  DISPUTED               // 客户对金额有异议,回到人工审核队列
 }
 
 enum ReservationStatus {

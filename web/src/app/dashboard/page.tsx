@@ -3,22 +3,21 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { invoiceApi, type Invoice } from '@/lib/api';
+import { invoiceApi, INVOICE_STATUS_LABEL, type Invoice } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SettlementSection } from '@/components/settlement-section';
 import { NameWatermark } from '@/components/name-watermark';
 
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: '待审核',
-  APPROVED: '审核成功',
-  REJECTED: '审核失败',
-};
+const STATUS_LABEL: Record<string, string> = INVOICE_STATUS_LABEL;
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   PENDING: 'outline',
   APPROVED: 'default',
   REJECTED: 'destructive',
+  AWAITING_CONFIRMATION: 'secondary',
+  CONFIRMED: 'default',
+  DISPUTED: 'outline',
 };
 
 export default function DashboardPage() {
@@ -59,9 +58,11 @@ export default function DashboardPage() {
     );
   }
 
-  const pending = invoices.filter((i) => i.status === 'PENDING').length;
+  const pending = invoices.filter((i) => i.status === 'PENDING' || i.status === 'DISPUTED').length;
+  const awaiting = invoices.filter((i) => i.status === 'AWAITING_CONFIRMATION');
+  // 只有客户确认过金额(CONFIRMED)的返点才计入
   const totalCashback = invoices
-    .filter((i) => i.status === 'APPROVED')
+    .filter((i) => i.status === 'CONFIRMED')
     .reduce((sum, i) => sum + (Number(i.cashbackAmount) || 0), 0);
 
   return (
@@ -149,7 +150,49 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* 返点确认与结算 */}
+        {/* 待确认返点金额 */}
+        {awaiting.length > 0 && (
+          <div className="card-luxury border-[#B8966E]/50">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs tracking-widest uppercase text-muted">待确认返点金额</p>
+              <span className="text-xs text-[#B8966E]">{awaiting.length} 张</span>
+            </div>
+            <p className="text-xs text-stone-500 mb-5">
+              审核已通过,请仔细核对返点金额是否无误。确认后金额不可更改,随后可选择结算方式。
+            </p>
+            <div className="space-y-3">
+              {awaiting.map((inv) => (
+                <div
+                  key={inv.id}
+                  className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-50 pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-stone-700">{inv.vendorName ?? '—'}</p>
+                    <p className="text-xs text-stone-500">
+                      {inv.purchaseDate ? new Date(inv.purchaseDate).toLocaleDateString('zh-CN') : '—'}
+                      {inv.grandTotalAmount && ` · 消费 €${Number(inv.grandTotalAmount).toFixed(2)}`}
+                      {inv.disputeResolutionNote && ' · 已复核'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-[#B8966E]">
+                      €{Number(inv.cashbackAmount ?? 0).toFixed(2)}
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={() => router.push(`/dashboard/invoices/${inv.id}/confirm`)}
+                      style={{ backgroundColor: '#B8966E', color: 'white' }}
+                    >
+                      核对并确认
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 选择结算方式与结算记录 */}
         {accessToken && <SettlementSection accessToken={accessToken} />}
 
         {/* 小票列表 */}
@@ -216,9 +259,9 @@ export default function DashboardPage() {
                       </td>
                       <td className="py-3 pr-4 text-right">
                         {inv.cashbackAmount ? (
-                          <span className={inv.status === 'APPROVED' ? 'text-[#B8966E]' : 'text-stone-400'}>
+                          <span className={inv.status === 'CONFIRMED' ? 'text-[#B8966E]' : 'text-stone-400'}>
                             €{Number(inv.cashbackAmount).toFixed(2)}
-                            {inv.status !== 'APPROVED' && (
+                            {(inv.status === 'PENDING' || inv.status === 'DISPUTED') && (
                               <span className="text-[10px] ml-0.5">预估</span>
                             )}
                           </span>
@@ -232,6 +275,9 @@ export default function DashboardPage() {
                           <p className="text-[11px] text-red-600 mt-1 max-w-[180px] ml-auto">
                             {inv.rejectReason}
                           </p>
+                        )}
+                        {inv.status === 'PENDING' && !inv.ocrCompletedAt && (
+                          <p className="text-[11px] text-stone-400 mt-1">识别中…</p>
                         )}
                       </td>
                     </tr>

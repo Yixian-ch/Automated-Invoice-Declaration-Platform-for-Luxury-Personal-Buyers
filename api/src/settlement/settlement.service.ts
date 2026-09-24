@@ -25,12 +25,12 @@ export class SettlementService {
     private readonly config: ConfigService,
   ) {}
 
-  /** Approved invoices whose cashback the customer has not yet confirmed */
+  /** 客户已确认返点金额(CONFIRMED)、尚未选择结算方式的小票 */
   async listPendingConfirmation(userId: string) {
     return this.prisma.invoice.findMany({
       where: {
         userId,
-        status: InvoiceStatus.APPROVED,
+        status: InvoiceStatus.CONFIRMED,
         cashbackAmount: { gt: 0 },
         settlement: null,
         deletedAt: null,
@@ -76,8 +76,9 @@ export class SettlementService {
     });
     if (!invoice || invoice.deletedAt) throw new NotFoundException('小票不存在');
     if (invoice.userId !== userId) throw new ForbiddenException();
-    if (invoice.status !== InvoiceStatus.APPROVED) {
-      throw new BadRequestException('该小票尚未通过审核，返点未确认');
+    // 只有客户确认过金额(CONFIRMED)的小票才能进入结算
+    if (invoice.status !== InvoiceStatus.CONFIRMED) {
+      throw new BadRequestException('请先确认该小票的返点金额,再选择结算方式');
     }
     const amount = invoice.cashbackAmount;
     if (!amount || Number(amount) <= 0) {

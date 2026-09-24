@@ -3,22 +3,28 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { invoiceApi, type Invoice, type InvoiceStatus, type CashbackBreakdownItem } from '@/lib/api';
+import {
+  invoiceApi,
+  INVOICE_STATUS_LABEL,
+  DISPUTE_CATEGORY_LABEL,
+  type Invoice,
+  type InvoiceStatus,
+  type CashbackBreakdownItem,
+} from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { NameWatermark } from '@/components/name-watermark';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-const STATUS_LABEL: Record<InvoiceStatus, string> = {
-  PENDING: '待审核',
-  APPROVED: '审核成功',
-  REJECTED: '审核失败',
-};
+const STATUS_LABEL: Record<InvoiceStatus, string> = INVOICE_STATUS_LABEL;
 
 const STATUS_VARIANT: Record<InvoiceStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   PENDING: 'outline',
   APPROVED: 'default',
   REJECTED: 'destructive',
+  AWAITING_CONFIRMATION: 'secondary',
+  CONFIRMED: 'default',
+  DISPUTED: 'outline',
 };
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -87,7 +93,8 @@ export default function InvoiceDetailPage() {
     );
   }
 
-  const isApproved = invoice.status === 'APPROVED';
+  // 只有客户确认后金额才是最终值;确认前(含待确认)后台仍可能更正,一律显示"预估"
+  const isApproved = invoice.status === 'CONFIRMED' || invoice.status === 'APPROVED';
   const imageUrl = `${API_BASE}/api/v1/invoices/${id}/image`;
   const currency = invoice.currency ?? '€';
   const breakdown = invoice.cashbackBreakdown ?? [];
@@ -153,6 +160,49 @@ export default function InvoiceDetailPage() {
                 <div className="mb-4 border border-red-200 bg-red-50 px-4 py-3">
                   <p className="text-xs tracking-widest uppercase text-red-500 mb-0.5">拒绝原因</p>
                   <p className="text-sm text-red-700">{invoice.rejectReason}</p>
+                  {invoice.rejectReason.includes('重新拍摄') && (
+                    <button onClick={() => router.push('/dashboard/upload')} className="mt-2 text-xs text-red-700 underline">
+                      重新上传 →
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {invoice.status === 'AWAITING_CONFIRMATION' && (
+                <div className="mb-4 border border-[#B8966E]/50 bg-amber-50/60 px-4 py-3 flex items-center justify-between gap-3">
+                  <p className="text-sm text-stone-700">审核已通过,请核对返点金额并确认。</p>
+                  <button
+                    onClick={() => router.push(`/dashboard/invoices/${id}/confirm`)}
+                    className="text-sm text-[#B8966E] hover:underline whitespace-nowrap"
+                  >
+                    去确认 →
+                  </button>
+                </div>
+              )}
+
+              {invoice.status === 'DISPUTED' && (
+                <div className="mb-4 border border-stone-200 bg-stone-50 px-4 py-3">
+                  <p className="text-xs tracking-widest uppercase text-muted mb-0.5">异议处理中</p>
+                  <p className="text-sm text-stone-700">
+                    {invoice.disputeCategory ? DISPUTE_CATEGORY_LABEL[invoice.disputeCategory] : ''}
+                    {invoice.disputeReason ? `:${invoice.disputeReason}` : ''}
+                  </p>
+                  <p className="text-xs text-stone-500 mt-1">审核员复核后会重新通知您确认金额。</p>
+                </div>
+              )}
+
+              {invoice.status === 'CONFIRMED' && (
+                <div className="mb-4 border border-green-200 bg-green-50 px-4 py-3">
+                  <p className="text-sm text-green-800">
+                    返点金额已于 {invoice.confirmedAt ? new Date(invoice.confirmedAt).toLocaleDateString('zh-CN') : ''} 确认并锁定。
+                  </p>
+                </div>
+              )}
+
+              {invoice.disputeResolutionNote && invoice.status !== 'DISPUTED' && (
+                <div className="mb-4 border border-stone-200 bg-stone-50 px-4 py-3">
+                  <p className="text-xs tracking-widest uppercase text-muted mb-0.5">审核员复核说明</p>
+                  <p className="text-sm text-stone-700 whitespace-pre-wrap">{invoice.disputeResolutionNote}</p>
                 </div>
               )}
 

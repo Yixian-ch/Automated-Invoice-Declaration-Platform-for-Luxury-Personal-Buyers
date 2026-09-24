@@ -147,10 +147,35 @@ export const userApi = {
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
-export type InvoiceStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type InvoiceStatus =
+  | 'PENDING'               // 人工审核中
+  | 'APPROVED'              // 旧状态,兼容
+  | 'REJECTED'
+  | 'AWAITING_CONFIRMATION' // 待客户确认返点金额
+  | 'CONFIRMED'             // 客户已确认,金额锁定
+  | 'DISPUTED';             // 客户对金额有异议
+
+export const INVOICE_STATUS_LABEL: Record<InvoiceStatus, string> = {
+  PENDING: '审核中',
+  APPROVED: '已通过',
+  REJECTED: '审核失败',
+  AWAITING_CONFIRMATION: '待确认返点',
+  CONFIRMED: '已确认',
+  DISPUTED: '异议处理中',
+};
+
+export type DisputeCategory = 'AMOUNT_WRONG' | 'ITEMS_WRONG' | 'OTHER';
+
+export const DISPUTE_CATEGORY_LABEL: Record<DisputeCategory, string> = {
+  AMOUNT_WRONG: '金额算错',
+  ITEMS_WRONG: '明细不对',
+  OTHER: '其他',
+};
 
 export type LineItem = {
   description: string;
+  brand?: string | null;
+  itemCategory?: string | null;
   quantity?: number;
   amount_ttc?: number;
   confidence: number;
@@ -188,6 +213,16 @@ export type Invoice = {
   /** 拒绝原因(自动拒绝或后台拒绝),买手端直接展示 */
   rejectReason: string | null;
   reservationId: string | null;
+  imageQuality?: number | null;
+  fraudFlags?: Record<string, unknown> | null;
+  // 客户确认返点金额
+  confirmedAt?: string | null;
+  disputedAt?: string | null;
+  disputeCategory?: DisputeCategory | null;
+  disputeReason?: string | null;
+  disputeCount?: number;
+  disputeResolutionNote?: string | null;
+  ocrCompletedAt?: string | null;
   uploadedAt: string | null;
   createdAt: string;
 };
@@ -235,6 +270,14 @@ export const invoiceApi = {
   /** Get single invoice */
   get: (invoiceId: string, token: string) =>
     request<Invoice>(`/invoices/${invoiceId}`, { token }),
+
+  /** 客户确认返点金额无误 → CONFIRMED(金额锁定) */
+  confirmCashback: (token: string, invoiceId: string) =>
+    request<Invoice>(`/invoices/${invoiceId}/confirm-cashback`, { method: 'POST', token }),
+
+  /** 客户对返点金额提出异议 → DISPUTED */
+  disputeCashback: (token: string, invoiceId: string, data: { category: DisputeCategory; note: string }) =>
+    request<Invoice>(`/invoices/${invoiceId}/dispute-cashback`, { method: 'POST', body: data, token }),
 };
 
 // ─── Reservations (预约购物) ──────────────────────────────────────────────────
@@ -460,13 +503,22 @@ export const adminApi = {
   correctInvoice: (
     token: string,
     invoiceId: string,
-    data: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
+    data: {
+      vendorName?: string;
+      purchaseDate?: string;
+      grandTotalAmount?: string;
+      lineItems?: { description: string; brand?: string | null; itemCategory?: string | null; quantity?: number; amount_ttc: number }[];
+    },
   ) =>
     request<Invoice>(`/invoices/${invoiceId}/correct`, {
       method: 'PATCH',
       body: data,
       token,
     }),
+
+  /** 后台复核金额异议:按当前识别数据重算返点,重新置为待客户确认 */
+  resolveDispute: (token: string, invoiceId: string, note: string) =>
+    request<Invoice>(`/invoices/${invoiceId}/resolve-dispute`, { method: 'POST', body: { note }, token }),
 
   deleteInvoice: (token: string, invoiceId: string) =>
     request<void>(`/invoices/${invoiceId}`, { method: 'DELETE', token }),
