@@ -44,7 +44,8 @@ export class ReservationAdminController {
   ) {
     let parsed: ReservationStatus | undefined;
     if (status) {
-      if (!(status in ReservationStatus)) throw new BadRequestException('status 无效');
+      const valid = Object.values(ReservationStatus) as string[];
+      if (!valid.includes(status)) throw new BadRequestException('status 无效');
       parsed = status as ReservationStatus;
     }
     return this.reservations.adminList(parsed, page, Math.min(limit, 200));

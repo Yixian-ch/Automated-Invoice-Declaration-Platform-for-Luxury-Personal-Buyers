@@ -170,6 +170,7 @@ export class InvoiceService {
         reviewedAt: new Date(),
         reviewedById: adminId,
         reviewNote: note ?? null,
+        rejectReason: null,
       },
     });
   }

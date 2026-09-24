@@ -32,6 +32,8 @@ export default function AdminReservationsPage() {
   const [filter, setFilter] = useState<ReservationStatus | ''>('PENDING');
   const [rows, setRows] = useState<AdminReservation[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(100);
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<AdminReservation | null>(null);
@@ -41,17 +43,24 @@ export default function AdminReservationsPage() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const res = await adminApi.listReservations(accessToken, { status: filter, page: 1 });
+      const res = await adminApi.listReservations(accessToken, { status: filter, page });
       setRows(res.items);
       setTotal(res.total);
+      setLimit(res.limit);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : '加载预约失败');
     } finally {
       setLoading(false);
     }
-  }, [accessToken, filter]);
+  }, [accessToken, filter, page]);
 
   useEffect(() => { load(); }, [load]);
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const changeFilter = (value: ReservationStatus | '') => {
+    setFilter(value);
+    setPage(1);
+  };
 
   const handleAccept = async (r: AdminReservation) => {
     if (!accessToken) return;
@@ -95,7 +104,7 @@ export default function AdminReservationsPage() {
         {FILTERS.map((f) => (
           <button
             key={f.value || 'all'}
-            onClick={() => setFilter(f.value)}
+            onClick={() => changeFilter(f.value)}
             className={`px-3 py-1.5 rounded text-sm border transition-colors ${
               filter === f.value
                 ? 'bg-[#B8966E] text-white border-[#B8966E]'
@@ -105,7 +114,28 @@ export default function AdminReservationsPage() {
             {f.label}
           </button>
         ))}
-        <span className="ml-auto text-xs text-stone-400">共 {total} 条</span>
+        <div className="ml-auto flex items-center gap-3 text-xs text-stone-400">
+          <span>共 {total} 条</span>
+          {totalPages > 1 && (
+            <span className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                className="px-2 py-1 rounded border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40"
+              >
+                上一页
+              </button>
+              <span>{page} / {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="px-2 py-1 rounded border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40"
+              >
+                下一页
+              </button>
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="bg-white border border-stone-200 rounded-lg overflow-x-auto">

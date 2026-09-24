@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ReservationStatus } from '@prisma/client';
+import { Prisma, ReservationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateReservationDto } from './dto/create-reservation.dto';
 import { compareYmd, isYmd, parisDayEnd, parisDayStart, todayInParis } from './paris-time';
@@ -47,27 +47,40 @@ export class ReservationService {
     const startAt = parisDayStart(dto.startDate);
     const endAt = parisDayEnd(dto.endDate);
 
-    // 应用层唯一性校验:同一商家下,与已有 PENDING/ACCEPTED 预约日期交叉 → 禁止
-    const overlapping = await this.prisma.reservation.findFirst({
-      where: {
-        userId,
-        merchantId: merchant.id,
-        status: { in: ACTIVE_STATUSES },
-        startAt: { lte: endAt },
-        endAt: { gte: startAt },
-      },
-      orderBy: { startAt: 'asc' },
-    });
-    if (overlapping) {
-      throw new ConflictException(
-        '该商家在所选日期内已有审核中或已通过的预约,请先取消原预约再重新预约',
+    // 应用层唯一性校验:同一商家下,与已有 PENDING/ACCEPTED 预约日期交叉 → 禁止。
+    // 查+插放在 Serializable 事务里,防止双击/并发提交产生两条交叉预约。
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const overlapping = await tx.reservation.findFirst({
+            where: {
+              userId,
+              merchantId: merchant.id,
+              status: { in: ACTIVE_STATUSES },
+              startAt: { lte: endAt },
+              endAt: { gte: startAt },
+            },
+            orderBy: { startAt: 'asc' },
+          });
+          if (overlapping) {
+            throw new ConflictException(
+              '该商家在所选日期内已有审核中或已通过的预约,请先取消原预约再重新预约',
+            );
+          }
+          return tx.reservation.create({
+            data: { userId, merchantId: merchant.id, startAt, endAt },
+            include: RESERVATION_INCLUDE,
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
+    } catch (err) {
+      // 并发写冲突(P2034):按"已存在交叉预约"处理
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
+        throw new ConflictException('预约提交冲突,请刷新后重试');
+      }
+      throw err;
     }
-
-    return this.prisma.reservation.create({
-      data: { userId, merchantId: merchant.id, startAt, endAt },
-      include: RESERVATION_INCLUDE,
-    });
   }
 
   listMine(userId: string) {
@@ -124,6 +137,8 @@ export class ReservationService {
   }
 
   async reject(adminId: string, id: string, note: string) {
+    const trimmed = note.trim();
+    if (!trimmed) throw new BadRequestException('拒绝时必须填写原因');
     const r = await this.requirePending(id);
     return this.prisma.reservation.update({
       where: { id: r.id },
@@ -131,7 +146,7 @@ export class ReservationService {
         status: ReservationStatus.REJECTED,
         reviewedAt: new Date(),
         reviewedBy: adminId,
-        rejectNote: note.trim(),
+        rejectNote: trimmed,
       },
       include: RESERVATION_INCLUDE,
     });

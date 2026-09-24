@@ -48,8 +48,9 @@ const BVE_MARKER_RE = /bordereau\s+de\\s+vente|BVE|d[eé]taxe|vente\\s+[àa]\\s+
 const BVE_MERCHANT_HDR_RE = /COMMER[CÇ]ANT|REPRESENT[EÉ]|VENDOR|MERCHANT/i;
 // cerfa 表单编号(所有退税单都一样,不是发票号),例如 "N° 15021*04"
 const CERFA_FORM_NO_RE = /^\s*(?:N\s*[°ºo]?\s*)?\d{5}\s*\*\s*\d{2}\s*$/i;
-// 条形码下方的交易号:18–22 位连续数字(允许数字间有空格)
-const BARCODE_NUMBER_RE = /(?<!\d)(?:\d[ \t]?){17,21}\d(?!\d)/g;
+// 条形码下方的交易号:18–22 位连续数字(条形码号是连印的,不允许空格,
+// 否则会把相邻的税号+邮编之类拼成一串)
+const BARCODE_NUMBER_RE = /(?<!\d)\d{18,22}(?!\d)/g;
 
 @Injectable()
 export class OcrService {
@@ -85,6 +86,7 @@ You MUST output a single valid JSON object. Do not include markdown codeblocks, 
 - invoiceNumber (string or null — the unique transaction number of this receipt. On French tax-free forms (Bordereau de vente à l'exportation / BVE) it is the LONG numeric string printed directly BELOW the barcode in the top-right corner, about 20 digits, e.g. "25020582499619654442". Return digits only. Do NOT return the cerfa form number such as "N° 15021*04" — that is a form template number shared by every receipt, not the transaction number. On ordinary invoices use the number printed after "N°", "Facture", "Ticket" or "Invoice". null if no such number is present)
 - merchantTaxId (string or null — the merchant's French SIRET: a 14-digit number printed just below the merchant's postal address in the "COMMERÇANT" / merchant block, e.g. "53775858300059". Digits only, no spaces. Do NOT confuse it with the tax-free operator's number in the "OPERATEUR DE DETAXE" block. null if not present)
 - purchaseDate (string format YYYY-MM-DD — on BVE forms use "Date d'émission du BVE")
+- rawText (string — a plain-text transcription of ALL printed text on the receipt, line by line, in reading order, including every number exactly as printed. This is used as a fallback when a field above cannot be located)
 - grandTotalAmount (float, the total amount including tax — "Montant total TTC")
 - taxRefundAmount (float or null — the duty-free refund amount labelled "Montant de la détaxe" or "Montant de remboursement" on BVE/détaxe receipts; null if not present)
 - buyerName (string, uppercase full name of the customer/tourist)
@@ -193,8 +195,10 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
   private _mapToOcrResult(raw: Record<string, any>, fallbacks: any, rawText: string): OcrResult {
     const merchantName = raw.merchantName || null;
     const confidence = this._computeConfidence(raw);
-    const invoiceNumber = this._resolveInvoiceNumber(raw.invoiceNumber, rawText);
-    const merchantTaxId = this._resolveMerchantTaxId(raw.merchantTaxId, rawText);
+    // 兜底扫描用模型转写的小票全文(rawText 字段);没有就退回整个响应文本
+    const receiptText = typeof raw.rawText === 'string' && raw.rawText.trim() ? raw.rawText : rawText;
+    const invoiceNumber = this._resolveInvoiceNumber(raw.invoiceNumber, receiptText);
+    const merchantTaxId = this._resolveMerchantTaxId(raw.merchantTaxId, receiptText);
     return {
       merchantName,
       merchantNameConfidence: raw.merchantName ? 0.90 : 0.0,
@@ -234,6 +238,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         needs_review: raw.needsReview,
         review_reasons: raw.reviewReasons,
         confidence,
+        receipt_text: typeof raw.rawText === 'string' ? raw.rawText : undefined,
         raw_text: rawText,
       },
     };

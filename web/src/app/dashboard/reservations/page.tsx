@@ -94,7 +94,7 @@ export default function ReservationsPage() {
 
   const handleCancel = async (r: Reservation) => {
     if (!accessToken) return;
-    if (!window.confirm(`确认取消 ${r.merchant.name} ${formatParisDate(r.startAt)} ~ ${formatParisDate(r.endAt)} 的预约?取消后该时段的小票将无法申请返点。`)) return;
+    if (!window.confirm(`确认取消 ${r.merchant.name} ${formatParisDate(r.startAt)} ~ ${formatParisDate(r.endAt)} 的预约?取消后,再上传的该时段小票将无法匹配、不予返点。`)) return;
     setCancellingId(r.id);
     try {
       await reservationApi.cancel(accessToken, r.id);
