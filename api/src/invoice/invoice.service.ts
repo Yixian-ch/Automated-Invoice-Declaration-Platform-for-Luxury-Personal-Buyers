@@ -2,17 +2,49 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
 import { v4 as uuidv4 } from 'uuid';
+import { InvoiceStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StorageService } from '../storage/storage.service.js';
 import { CashbackService } from '../cashback/cashback.service.js';
+import {
+  ConfirmationError,
+  applyConfirm,
+  applyDispute,
+  assertAmountEditable,
+  assertCanApprove,
+  assertCanReject,
+  assertCanResolveDispute,
+} from './cashback-confirmation.js';
+import { REVIEW_REASON_DISPUTED } from '../auto-review/auto-review.rules.js';
+import type { CorrectInvoiceDto } from './dto/correct-invoice.dto.js';
 
 export const OCR_QUEUE = 'ocr';
+
+/** 把纯逻辑层的错误映射成 HTTP 异常 */
+function rethrow(err: unknown): never {
+  if (err instanceof ConfirmationError) {
+    throw err.kind === 'conflict' ? new ConflictException(err.message) : new BadRequestException(err.message);
+  }
+  throw err;
+}
+
+const VALID_STATUSES = Object.values(InvoiceStatus) as string[];
+
+/** 解析 ?status=PENDING,DISPUTED 这种多值筛选 */
+export function parseStatusFilter(raw?: string): InvoiceStatus[] | undefined {
+  if (!raw) return undefined;
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  const valid = parts.filter((s) => VALID_STATUSES.includes(s)) as InvoiceStatus[];
+  return valid.length > 0 ? valid : undefined;
+}
 
 @Injectable()
 export class InvoiceService {
@@ -92,6 +124,11 @@ export class InvoiceService {
           ocrConfidence: true,
           rejectReason: true,
           reservationId: true,
+          confirmedAt: true,
+          disputedAt: true,
+          disputeCount: true,
+          disputeResolutionNote: true,
+          ocrCompletedAt: true,
           uploadedAt: true,
           createdAt: true,
         },
@@ -115,14 +152,16 @@ export class InvoiceService {
 
   async adminList(status?: string, page = 1, limit = 50, userId?: string) {
     const skip = (page - 1) * limit;
-    const where: Record<string, unknown> = {};
-    if (status) where.status = status;
+    const where: Prisma.InvoiceWhereInput = {};
+    const statuses = parseStatusFilter(status);
+    if (statuses) where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
     if (userId) where.userId = userId;
 
     const [items, total] = await Promise.all([
       this.prisma.invoice.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        // 金额异议和风控标记的优先排在前面,再按时间倒序
+        orderBy: [{ needsReview: 'desc' }, { createdAt: 'desc' }],
         skip,
         take: limit,
         include: {
@@ -139,69 +178,251 @@ export class InvoiceService {
     return { items, total, page, limit };
   }
 
+  /** 按当前识别数据用规则重算返点(返点规则不允许人工覆盖) */
+  private async recomputeCashback(invoice: {
+    vendorName: string | null;
+    grandTotalAmount: Prisma.Decimal | null;
+    taxRefundAmount: Prisma.Decimal | null;
+    lineItems: Prisma.JsonValue;
+  }) {
+    const lineItems = Array.isArray(invoice.lineItems) ? (invoice.lineItems as any[]) : [];
+    if (!invoice.grandTotalAmount || !invoice.vendorName) return null;
+    return this.cashback.calculate(
+      invoice.vendorName,
+      Number(invoice.grandTotalAmount),
+      invoice.taxRefundAmount != null ? Number(invoice.taxRefundAmount) : null,
+      lineItems.map((li: any) => ({
+        description: li.description,
+        brand: li.brand ?? null,
+        itemCategory: li.itemCategory ?? null,
+        amount_ttc: li.amount_ttc ?? 0,
+      })),
+    );
+  }
+
+  /**
+   * 后台通过:PENDING/DISPUTED → AWAITING_CONFIRMATION(待客户确认返点金额)。
+   * APPROVED 不再作为停留状态。
+   */
   async approve(adminId: string, invoiceId: string, note?: string) {
-    const invoice = await this.prisma.invoice.findUniqueOrThrow({
-      where: { id: invoiceId },
-    });
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    try {
+      assertCanApprove(invoice);
+    } catch (e) {
+      rethrow(e);
+    }
 
-    const lineItems = Array.isArray(invoice.lineItems) ? invoice.lineItems as any[] : [];
-
-    const cashbackResult =
-      invoice.grandTotalAmount && invoice.vendorName
-        ? await this.cashback.calculate(
-            invoice.vendorName,
-            Number(invoice.grandTotalAmount),
-            invoice.taxRefundAmount != null ? Number(invoice.taxRefundAmount) : null,
-            lineItems.map((li: any) => ({
-              description: li.description,
-              brand: li.brand ?? null,
-              itemCategory: li.itemCategory ?? null,
-              amount_ttc: li.amount_ttc ?? 0,
-            })),
-          )
-        : null;
+    const cashbackResult = await this.recomputeCashback(invoice);
+    if (!cashbackResult || cashbackResult.totalCashback <= 0) {
+      throw new BadRequestException('无法按规则计算返点(门店未配置返点规则或金额为空),请先更正识别数据');
+    }
 
     return this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
-        status: 'APPROVED',
-        cashbackAmount: cashbackResult ? cashbackResult.totalCashback : undefined,
-        cashbackBreakdown: cashbackResult ? (cashbackResult.breakdown as any) : undefined,
+        status: InvoiceStatus.AWAITING_CONFIRMATION,
+        cashbackAmount: cashbackResult.totalCashback,
+        cashbackBreakdown: cashbackResult.breakdown as any,
         reviewedAt: new Date(),
         reviewedById: adminId,
         reviewNote: note ?? null,
         rejectReason: null,
+        needsReview: false,
       },
     });
   }
 
   async reject(adminId: string, invoiceId: string, note: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    try {
+      assertCanReject(invoice);
+    } catch (e) {
+      rethrow(e);
+    }
     return this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
-        status: 'REJECTED',
+        status: InvoiceStatus.REJECTED,
         reviewedAt: new Date(),
         reviewedById: adminId,
         reviewNote: note,
         // 一个字段管所有拒绝原因,买手端展示的就是它
         rejectReason: note,
+        needsReview: false,
       },
     });
   }
 
-  async correctInvoice(
-    invoiceId: string,
-    dto: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
-  ) {
+  /**
+   * 后台更正识别数据(门店/日期/总额/商品明细)。返点随后由规则重算,
+   * CONFIRMED(金额已锁定)的小票拒绝任何更正。
+   */
+  async correctInvoice(invoiceId: string, dto: CorrectInvoiceDto) {
     const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
+    try {
+      assertAmountEditable(invoice);
+    } catch (e) {
+      rethrow(e);
+    }
 
-    const data: Record<string, unknown> = { needsReview: false };
+    const data: Prisma.InvoiceUncheckedUpdateInput = {};
     if (dto.vendorName !== undefined) data.vendorName = dto.vendorName;
     if (dto.purchaseDate !== undefined) data.purchaseDate = new Date(dto.purchaseDate);
     if (dto.grandTotalAmount !== undefined) data.grandTotalAmount = dto.grandTotalAmount;
+    if (dto.lineItems !== undefined) {
+      data.lineItems = dto.lineItems.map((li) => ({
+        description: li.description,
+        brand: li.brand ?? null,
+        itemCategory: li.itemCategory ?? null,
+        quantity: li.quantity ?? 1,
+        amount_ttc: li.amount_ttc,
+        confidence: 1,
+      })) as any;
+    }
+
+    // 更正后立即按规则重算预估返点,后台和客户看到的都是最新值
+    const merged = {
+      vendorName: (data.vendorName as string | undefined) ?? invoice.vendorName,
+      grandTotalAmount:
+        data.grandTotalAmount !== undefined
+          ? new Prisma.Decimal(data.grandTotalAmount as string)
+          : invoice.grandTotalAmount,
+      taxRefundAmount: invoice.taxRefundAmount,
+      lineItems: (data.lineItems as Prisma.JsonValue | undefined) ?? invoice.lineItems,
+    };
+    const cashbackResult = await this.recomputeCashback(merged);
+    data.cashbackAmount = cashbackResult ? cashbackResult.totalCashback : null;
+    data.cashbackBreakdown = cashbackResult ? (cashbackResult.breakdown as any) : Prisma.DbNull;
+
+    // 异议中的小票保留"需人工介入"标记,直到复核完成;其余更正后清掉
+    if (invoice.status !== InvoiceStatus.DISPUTED) data.needsReview = false;
 
     return this.prisma.invoice.update({ where: { id: invoiceId }, data });
+  }
+
+  // ─── 客户确认返点金额 ─────────────────────────────────────────────────────
+
+  /** 客户"确认无误":AWAITING_CONFIRMATION → CONFIRMED,金额锁定 */
+  async confirmCashback(userId: string, invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice || invoice.deletedAt) throw new NotFoundException('小票不存在');
+    if (invoice.userId !== userId) throw new ForbiddenException();
+
+    let patch;
+    try {
+      patch = applyConfirm(invoice);
+    } catch (e) {
+      rethrow(e);
+    }
+
+    // 条件更新:并发点两次只有一次生效
+    const res = await this.prisma.invoice.updateMany({
+      where: { id: invoiceId, status: InvoiceStatus.AWAITING_CONFIRMATION },
+      data: patch,
+    });
+    if (res.count === 0) throw new ConflictException('该小票状态已变化,请刷新后重试');
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'CASHBACK_CONFIRMED',
+        resourceType: 'Invoice',
+        resourceId: invoiceId,
+        userId,
+        meta: { cashbackAmount: invoice.cashbackAmount?.toString() ?? null },
+      },
+    });
+    return this.prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+  }
+
+  /** 客户"金额有误":AWAITING_CONFIRMATION → DISPUTED,回到人工审核队列 */
+  async disputeCashback(userId: string, invoiceId: string, input: { category: string; note: string }) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice || invoice.deletedAt) throw new NotFoundException('小票不存在');
+    if (invoice.userId !== userId) throw new ForbiddenException();
+
+    let patch;
+    try {
+      patch = applyDispute(invoice, input);
+    } catch (e) {
+      rethrow(e);
+    }
+
+    const reviewReasons = Array.from(new Set([...(invoice.reviewReasons ?? []), REVIEW_REASON_DISPUTED]));
+    const res = await this.prisma.invoice.updateMany({
+      where: { id: invoiceId, status: InvoiceStatus.AWAITING_CONFIRMATION },
+      data: { ...patch, reviewReasons, disputeResolutionNote: null },
+    });
+    if (res.count === 0) throw new ConflictException('该小票状态已变化,请刷新后重试');
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'CASHBACK_DISPUTED',
+        resourceType: 'Invoice',
+        resourceId: invoiceId,
+        userId,
+        meta: { category: input.category, note: input.note.trim(), disputeCount: patch.disputeCount },
+      },
+    });
+    return this.prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+  }
+
+  /**
+   * 后台处理异议:按当前识别数据重算返点(修正过识别数据则金额随之变化,
+   * 否则维持原金额),重新置为 AWAITING_CONFIRMATION 并附复核说明。
+   */
+  async resolveDispute(adminId: string, invoiceId: string, note: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const cashbackResult = await this.recomputeCashback(invoice);
+    if (!cashbackResult || cashbackResult.totalCashback <= 0) {
+      throw new BadRequestException('无法按规则计算返点,请先更正识别数据');
+    }
+    const previous = invoice.cashbackAmount ? Number(invoice.cashbackAmount) : 0;
+    const amountChanged = Math.abs(cashbackResult.totalCashback - previous) >= 0.005;
+
+    try {
+      assertCanResolveDispute(invoice, { amountChanged, note });
+    } catch (e) {
+      rethrow(e);
+    }
+
+    const reviewReasons = (invoice.reviewReasons ?? []).filter((r) => r !== REVIEW_REASON_DISPUTED);
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: InvoiceStatus.AWAITING_CONFIRMATION,
+        cashbackAmount: cashbackResult.totalCashback,
+        cashbackBreakdown: cashbackResult.breakdown as any,
+        disputeResolutionNote: note?.trim() || (amountChanged ? '已根据您的反馈重新核算返点金额' : null),
+        reviewedAt: new Date(),
+        reviewedById: adminId,
+        needsReview: false,
+        reviewReasons,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        action: 'CASHBACK_DISPUTE_RESOLVED',
+        resourceType: 'Invoice',
+        resourceId: invoiceId,
+        userId: invoice.userId,
+        meta: {
+          previousAmount: previous,
+          newAmount: cashbackResult.totalCashback,
+          amountChanged,
+          note: note?.trim() ?? null,
+        },
+      },
+    });
+    return updated;
   }
 
   async deleteInvoice(invoiceId: string): Promise<void> {

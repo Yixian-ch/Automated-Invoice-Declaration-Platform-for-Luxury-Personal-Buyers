@@ -6,12 +6,15 @@ import { adminApi, AdminInvoice, InvoiceStatus, LineItem } from '@/lib/api';
 import { toast } from 'sonner';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-const ALL_STATUSES: InvoiceStatus[] = ['PENDING', 'APPROVED', 'REJECTED'];
+const ALL_STATUSES: InvoiceStatus[] = ['PENDING', 'DISPUTED', 'AWAITING_CONFIRMATION', 'CONFIRMED', 'REJECTED', 'APPROVED'];
 
 const STATUS_LABEL: Record<InvoiceStatus, string> = {
   PENDING: '待审核',
-  APPROVED: '已通过',
+  APPROVED: '已通过(旧)',
   REJECTED: '已拒绝',
+  AWAITING_CONFIRMATION: '待客户确认',
+  CONFIRMED: '客户已确认',
+  DISPUTED: '金额异议',
 };
 
 export default function AdminDataPage() {
@@ -134,12 +137,17 @@ export default function AdminDataPage() {
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                        inv.status === 'APPROVED' ? 'bg-green-50 text-green-700' :
+                        inv.status === 'CONFIRMED' || inv.status === 'APPROVED' ? 'bg-green-50 text-green-700' :
+                        inv.status === 'AWAITING_CONFIRMATION' ? 'bg-amber-50 text-amber-700' :
+                        inv.status === 'DISPUTED' ? 'bg-orange-50 text-orange-700' :
                         inv.status === 'REJECTED' ? 'bg-red-50 text-red-700' :
                         'bg-stone-100 text-stone-600'
                       }`}>
                         {STATUS_LABEL[inv.status] ?? inv.status}
                       </span>
+                      {inv.status === 'REJECTED' && inv.rejectReason && (
+                        <p className="text-[11px] text-red-500 mt-0.5 max-w-[160px]">{inv.rejectReason}</p>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                       <button

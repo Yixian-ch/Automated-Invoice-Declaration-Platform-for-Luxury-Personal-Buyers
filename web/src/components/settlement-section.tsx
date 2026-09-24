@@ -134,7 +134,8 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
       {/* 待确认返点 */}
       {pending.length > 0 && (
         <div className="card-luxury">
-          <p className="mb-6 text-xs tracking-widest uppercase text-muted">待确认返点</p>
+          <p className="mb-1 text-xs tracking-widest uppercase text-muted">待选择结算方式</p>
+          <p className="mb-6 text-xs text-stone-500">返点金额已确认,请选择结算方式。</p>
           <div className="space-y-3">
             {pending.map((item) => (
               <div
@@ -153,7 +154,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
                     €{Number(item.cashbackAmount).toFixed(2)}
                   </span>
                   <Button size="sm" onClick={() => openConfirm(item)} style={{ backgroundColor: '#B8966E', color: 'white' }}>
-                    确认返点
+                    选择结算方式
                   </Button>
                 </div>
               </div>

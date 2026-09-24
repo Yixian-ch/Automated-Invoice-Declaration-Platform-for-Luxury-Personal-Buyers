@@ -30,6 +30,8 @@ import { UserRole } from '@prisma/client';
 
 import { InvoiceService } from './invoice.service';
 import { OcrService } from '../ocr/ocr.service';
+import { DisputeCashbackDto, ResolveDisputeDto } from './dto/dispute-cashback.dto';
+import { CorrectInvoiceDto } from './dto/correct-invoice.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -117,7 +119,41 @@ export class InvoiceController {
     return this.invoiceService.getById(user.id, id, isAdmin);
   }
 
+  // ─── 客户确认返点金额 ───────────────────────
+
+  /** POST /api/v1/invoices/:id/confirm-cashback — 客户"确认无误" */
+  @Post(':id/confirm-cashback')
+  @Roles(UserRole.RESELLER, UserRole.ORG_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async confirmCashback(@CurrentUser() user: { id: string }, @Param('id') id: string) {
+    return this.invoiceService.confirmCashback(user.id, id);
+  }
+
+  /** POST /api/v1/invoices/:id/dispute-cashback — 客户"金额有误" */
+  @Post(':id/dispute-cashback')
+  @Roles(UserRole.RESELLER, UserRole.ORG_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async disputeCashback(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: DisputeCashbackDto,
+  ) {
+    return this.invoiceService.disputeCashback(user.id, id, dto);
+  }
+
   // ─── Admin endpoints ───────────────────────
+
+  /** POST /api/v1/invoices/:id/resolve-dispute — 后台复核异议,重新置为待确认 */
+  @Post(':id/resolve-dispute')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async resolveDispute(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: ResolveDisputeDto,
+  ) {
+    return this.invoiceService.resolveDispute(user.id, id, dto.note);
+  }
 
   @Get('admin/all')
   @Roles(UserRole.ADMIN, UserRole.REVIEWER)
@@ -155,10 +191,7 @@ export class InvoiceController {
   @Patch(':id/correct')
   @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
-  async correct(
-    @Param('id') id: string,
-    @Body() dto: { vendorName?: string; purchaseDate?: string; grandTotalAmount?: string },
-  ) {
+  async correct(@Param('id') id: string, @Body() dto: CorrectInvoiceDto) {
     return this.invoiceService.correctInvoice(id, dto);
   }
 
