@@ -1,9 +1,13 @@
 /**
  * 上传前在浏览器里压缩小票照片。
  *
- * 手机直出照片普遍 2–5 MB,而 OCR 只需要长边 2000 像素左右就足够清晰。
+ * 手机直出照片普遍 2–5 MB(新款旗舰 10 MB+),而 OCR 只需要长边 2000 像素左右就足够清晰。
  * 缩到长边 MAX_EDGE、JPEG 质量 QUALITY,通常压到 300–600 KB,
  * 上传快得多,也不会撞 nginx / 应用的体积上限。PDF 原样上传。
+ *
+ * 解码用 <img> 而不是 createImageBitmap:所有现代浏览器(含 iOS Safari)
+ * 对 <img> 默认应用 EXIF 方向,竖拍照片不会横过来;createImageBitmap 的
+ * imageOrientation 选项在旧 Safari 上会被忽略,重编码后又丢了 EXIF,就永久歪了。
  */
 
 const MAX_EDGE = 2000;
@@ -17,21 +21,37 @@ export interface CompressResult {
   compressed: boolean;
 }
 
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('image decode failed'));
+    };
+    img.src = url;
+  });
+}
+
 export async function compressImageForUpload(file: File): Promise<CompressResult> {
   const passthrough: CompressResult = { file, originalSize: file.size, compressed: false };
   if (!file.type.startsWith('image/')) return passthrough;
-  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return passthrough;
+  if (typeof document === 'undefined') return passthrough;
 
-  let bitmap: ImageBitmap | null = null;
   try {
-    // from-image:按 EXIF 方向摆正,避免竖拍照片压缩后横过来
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    const longest = Math.max(bitmap.width, bitmap.height);
+    const img = await loadImage(file);
+    // naturalWidth/Height 已经是按 EXIF 摆正后的尺寸
+    const longest = Math.max(img.naturalWidth, img.naturalHeight);
+    if (!longest) return passthrough;
     const scale = Math.min(1, MAX_EDGE / longest);
     if (scale === 1 && file.size <= SKIP_BELOW_BYTES) return passthrough;
 
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -40,7 +60,7 @@ export async function compressImageForUpload(file: File): Promise<CompressResult
     // PNG 透明底转 JPEG 时铺白,免得变成黑底
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(bitmap, 0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
 
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', QUALITY));
     if (!blob || blob.size >= file.size) return passthrough;
@@ -54,8 +74,6 @@ export async function compressImageForUpload(file: File): Promise<CompressResult
   } catch {
     // 解码失败(损坏文件、不支持的编码等)就原样上传,交给服务端判断
     return passthrough;
-  } finally {
-    bitmap?.close();
   }
 }
 

@@ -13,7 +13,8 @@ const ACCEPTED_TYPES: Record<string, string> = {
   'image/jpeg': 'JPEG',
   'image/png': 'PNG',
 };
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB(服务端上限,PDF 与压缩后的图片都按它检查)
+const MAX_RAW_IMAGE_BYTES = 40 * 1024 * 1024; // 原始照片可以更大,上传前会压缩
 
 type FileStatus = 'pending' | 'compressing' | 'uploading' | 'done' | 'error';
 
@@ -44,8 +45,10 @@ export default function UploadPage() {
         toast.error(`${f.name}：仅支持 PDF、JPEG 或 PNG 格式。`);
         continue;
       }
-      if (f.size > MAX_BYTES) {
-        toast.error(`${f.name}：文件超过 10 MB 限制。`);
+      // 图片上传前会压缩,原图允许更大;PDF 不压缩,直接按服务端上限检查
+      const isImage = f.type.startsWith('image/');
+      if (isImage ? f.size > MAX_RAW_IMAGE_BYTES : f.size > MAX_BYTES) {
+        toast.error(`${f.name}：文件超过 ${isImage ? '40' : '10'} MB 限制。`);
         continue;
       }
       valid.push(f);
@@ -95,6 +98,9 @@ export default function UploadPage() {
         // 先在浏览器里压缩照片(长边 2000px、JPEG 0.85),再上传
         updateItem(item.id, { status: 'compressing', progress: 0 });
         const { file: toUpload, compressed } = await compressImageForUpload(item.file);
+        if (toUpload.size > MAX_BYTES) {
+          throw new Error(`压缩后仍超过 10 MB(${formatBytes(toUpload.size)}),请换一张分辨率低一些的照片`);
+        }
 
         updateItem(item.id, {
           status: 'uploading',
@@ -179,7 +185,7 @@ export default function UploadPage() {
                 拖拽小票至此处
               </p>
               <p className="text-sm text-stone-400 mt-1">
-                或点击选择文件 — PDF、JPEG、PNG，每个最大 10 MB
+                或点击选择文件 — PDF、JPEG、PNG；照片会自动压缩后上传
               </p>
               <p className="text-xs text-[#B8966E] mt-2 font-medium">
                 支持多文件上传
@@ -304,7 +310,7 @@ function FileRow({
           </p>
           <p className="text-xs text-stone-400">
             {ACCEPTED_TYPES[item.file.type]} · {formatBytes(item.file.size)}
-            {item.uploadedBytes != null && item.uploadedBytes < item.file.size && (
+            {item.uploadedBytes != null && (
               <span className="text-stone-400"> → 压缩后 {formatBytes(item.uploadedBytes)}</span>
             )}
           </p>
@@ -312,7 +318,7 @@ function FileRow({
         <span className={`text-xs font-medium shrink-0 ${labelColor}`}>
           {label}
         </span>
-        {onRemove && item.status !== 'uploading' && item.status !== 'compressing' && (
+        {onRemove && (
           <button
             onClick={onRemove}
             className="text-stone-300 hover:text-stone-500 text-sm shrink-0 ml-1"

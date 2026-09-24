@@ -80,7 +80,9 @@ services:
       - '80:80'
       - '443:443'
     volumes:
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # 挂整个目录而不是单个文件:git reset --hard 会换掉文件 inode,
+      # 单文件挂载会让容器一直看到旧配置,reload 也无效
+      - ./docker/nginx:/etc/nginx/conf.d:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
 
 volumes:
