@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import {
   settlementApi,
   SETTLEMENT_METHOD_LABEL,
+  settlementStatusLabel,
   type PendingCashback,
   type Settlement,
   type SettlementMethod,
@@ -21,14 +22,6 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
-const METHOD_LABEL = SETTLEMENT_METHOD_LABEL;
-
-function statusLabel(s: Settlement): string {
-  if (s.method === 'BANK_TRANSFER') {
-    return { CONFIRMED: '已确认（打款未发送）', SENT: '打款处理中', PAID: '已到账', FAILED: '打款失败' }[s.status];
-  }
-  return { CONFIRMED: '待发放', SENT: '发放中', PAID: '已发放', FAILED: '发放失败' }[s.status];
-}
 
 const STATUS_VARIANT: Record<SettlementStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   CONFIRMED: 'outline',
@@ -98,7 +91,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
           : {}),
       });
       if (!isBank) {
-        toast.success(`返点已确认，${METHOD_LABEL[method]}将由平台发放`);
+        toast.success(`返点已确认，${SETTLEMENT_METHOD_LABEL[method]}将由平台发放`);
       } else if (res.status === 'FAILED') {
         toast.warning('返点已确认，但打款指令发送失败，可稍后在结算记录中重试');
       } else {
@@ -173,7 +166,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
                 <div className="min-w-0">
                   <p className="truncate text-sm text-stone-700">{s.invoice.vendorName ?? '—'}</p>
                   <p className="text-xs text-stone-500">
-                    {new Date(s.confirmedAt).toLocaleDateString('zh-CN')} · {METHOD_LABEL[s.method]}
+                    {new Date(s.confirmedAt).toLocaleDateString('zh-CN')} · {SETTLEMENT_METHOD_LABEL[s.method]}
                     {s.bankName && ` · ${s.bankName}`}
                     {s.bankIban && ` ····${s.bankIban.slice(-4)}`}
                     {s.status === 'FAILED' && s.failureReason && ` · ${s.failureReason}`}
@@ -181,7 +174,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-stone-700">€{Number(s.amount).toFixed(2)}</span>
-                  <Badge variant={STATUS_VARIANT[s.status]}>{statusLabel(s)}</Badge>
+                  <Badge variant={STATUS_VARIANT[s.status]}>{settlementStatusLabel(s)}</Badge>
                   {s.method === 'BANK_TRANSFER' && (s.status === 'FAILED' || s.status === 'CONFIRMED') && (
                     <Button size="sm" variant="outline" onClick={() => retry(s.id)}>
                       {s.status === 'FAILED' ? '重试' : '发送打款'}
@@ -212,7 +205,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
               <div>
                 <label className="mb-1.5 block text-xs text-muted">结算方式</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(Object.keys(METHOD_LABEL) as SettlementMethod[]).map((m) => (
+                  {(Object.keys(SETTLEMENT_METHOD_LABEL) as SettlementMethod[]).map((m) => (
                     <button
                       key={m}
                       type="button"
@@ -223,7 +216,7 @@ export function SettlementSection({ accessToken }: { accessToken: string }) {
                           : 'border-border text-stone-600 hover:border-stone-300'
                       }`}
                     >
-                      {METHOD_LABEL[m]}
+                      {SETTLEMENT_METHOD_LABEL[m]}
                     </button>
                   ))}
                 </div>

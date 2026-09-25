@@ -2,27 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { adminApi, AdminInvoice, InvoiceStatus, LineItem, SETTLEMENT_METHOD_LABEL } from '@/lib/api';
+import { adminApi, AdminInvoice, InvoiceStatus, LineItem, SETTLEMENT_METHOD_LABEL, settlementStatusLabel } from '@/lib/api';
+import { toast } from 'sonner';
 
-const SETTLEMENT_STATUS_LABEL: Record<string, string> = {
-  CONFIRMED: '待发放/待打款',
-  SENT: '打款处理中',
-  PAID: '已到账/已发放',
-  FAILED: '失败',
-};
-
+/** 「支付方式」一行:方式 · 银行信息 · 状态;客户未选择时为"未选择" */
 function settlementSummary(inv: AdminInvoice): string {
   const s = inv.settlement;
   if (!s) return '未选择';
-  const parts = [SETTLEMENT_METHOD_LABEL[s.method] ?? s.method];
+  const parts = [SETTLEMENT_METHOD_LABEL[s.method]];
   if (s.method === 'BANK_TRANSFER') {
     const bits = [s.bankName, s.bankAccountName, s.bankIban ? `····${s.bankIban.slice(-4)}` : null].filter(Boolean);
     if (bits.length) parts.push(bits.join(' / '));
   }
-  parts.push(SETTLEMENT_STATUS_LABEL[s.status] ?? s.status);
+  parts.push(settlementStatusLabel(s));
   return parts.join(' · ');
 }
-import { toast } from 'sonner';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const ALL_STATUSES: InvoiceStatus[] = ['PENDING', 'DISPUTED', 'AWAITING_CONFIRMATION', 'CONFIRMED', 'REJECTED', 'APPROVED'];

@@ -340,14 +340,31 @@ export const SETTLEMENT_METHOD_LABEL: Record<SettlementMethod, string> = {
   GIFT_CARD: '礼品券',
 };
 
+/** 结算状态文案随方式不同:银行卡是"打款",代金券/礼品券是"发放" */
+const BANK_STATUS_LABEL: Record<SettlementStatus, string> = {
+  CONFIRMED: '已确认（打款未发送）',
+  SENT: '打款处理中',
+  PAID: '已到账',
+  FAILED: '打款失败',
+};
+const ISSUE_STATUS_LABEL: Record<SettlementStatus, string> = {
+  CONFIRMED: '待发放',
+  SENT: '发放中',
+  PAID: '已发放',
+  FAILED: '发放失败',
+};
+export function settlementStatusLabel(s: { method: SettlementMethod; status: SettlementStatus }): string {
+  return (s.method === 'BANK_TRANSFER' ? BANK_STATUS_LABEL : ISSUE_STATUS_LABEL)[s.status];
+}
+
 export type Settlement = {
   id: string;
   invoiceId: string;
   amount: string;
   method: SettlementMethod;
   status: SettlementStatus;
-  bankAccountName?: string | null;
-  bankName?: string | null;
+  bankAccountName: string | null;
+  bankName: string | null;
   bankIban: string | null;
   failureReason: string | null;
   confirmedAt: string;

@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsIn,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -8,6 +9,9 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+const trim = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 
 export const SETTLEMENT_METHODS = ['BANK_TRANSFER', 'VOUCHER', 'GIFT_CARD'] as const;
 export type SettlementMethodValue = (typeof SETTLEMENT_METHODS)[number];
@@ -21,13 +25,17 @@ export class ConfirmSettlementDto {
 
   /** Bank details are required only for bank transfers */
   @ValidateIf((o: ConfirmSettlementDto) => o.method === 'BANK_TRANSFER')
+  @trim()
   @IsString()
+  @IsNotEmpty({ message: '请填写收款人姓名' })
   @MaxLength(100)
   bankAccountName?: string;
 
   /** 银行名称(与我的主页「银行名称」一致) */
   @ValidateIf((o: ConfirmSettlementDto) => o.method === 'BANK_TRANSFER')
+  @trim()
   @IsString()
+  @IsNotEmpty({ message: '请填写银行名称' })
   @MaxLength(100)
   bankName?: string;
 
