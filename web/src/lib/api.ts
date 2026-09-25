@@ -334,12 +334,20 @@ export type SettlementStatus = 'CONFIRMED' | 'SENT' | 'PAID' | 'FAILED';
 
 export type SettlementMethod = 'BANK_TRANSFER' | 'VOUCHER' | 'GIFT_CARD';
 
+export const SETTLEMENT_METHOD_LABEL: Record<SettlementMethod, string> = {
+  BANK_TRANSFER: '银行卡打款',
+  VOUCHER: '代金券',
+  GIFT_CARD: '礼品券',
+};
+
 export type Settlement = {
   id: string;
   invoiceId: string;
   amount: string;
   method: SettlementMethod;
   status: SettlementStatus;
+  bankAccountName?: string | null;
+  bankName?: string | null;
   bankIban: string | null;
   failureReason: string | null;
   confirmedAt: string;
@@ -352,8 +360,8 @@ export type ConfirmSettlementPayload = {
   invoiceId: string;
   method: SettlementMethod;
   bankAccountName?: string;
+  bankName?: string;
   bankIban?: string;
-  bankBic?: string;
   saveBankInfo?: boolean;
 };
 
@@ -375,10 +383,24 @@ export const settlementApi = {
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
+export type AdminInvoiceSettlement = {
+  id: string;
+  method: SettlementMethod;
+  status: SettlementStatus;
+  amount: string;
+  bankAccountName: string | null;
+  bankName: string | null;
+  bankIban: string | null;
+  confirmedAt: string;
+  paidAt: string | null;
+};
+
 export type AdminInvoice = Invoice & {
   user: { id: string; firstName: string; lastName: string; email: string };
   matchedMerchant: { id: string; name: string; taxId: string } | null;
   reservation: { id: string; startAt: string; endAt: string; status: ReservationStatus } | null;
+  /** 客户选择的结算方式;未选择时为 null */
+  settlement: AdminInvoiceSettlement | null;
 };
 
 export type AdminReservation = Reservation & {

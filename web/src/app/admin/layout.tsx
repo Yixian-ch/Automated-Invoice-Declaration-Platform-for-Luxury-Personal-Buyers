@@ -15,7 +15,7 @@ const NAV = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -52,6 +52,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
+        <div className="px-5 py-4 border-t border-stone-100 space-y-2">
+          <p className="text-xs text-stone-400 truncate" title={user.email}>{user.email}</p>
+          <button
+            onClick={async () => {
+              await logout();
+              router.replace('/login');
+            }}
+            className="text-sm text-stone-600 hover:text-red-600 transition-colors"
+          >
+            退出登录
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}

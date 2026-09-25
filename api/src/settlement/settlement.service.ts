@@ -104,6 +104,7 @@ export class SettlementService {
             amount,
             method: dto.method,
             bankAccountName: isBank ? dto.bankAccountName!.trim() : null,
+            bankName: isBank ? dto.bankName?.trim() || null : null,
             bankIban: iban,
             bankBic: isBank ? dto.bankBic?.trim() || null : null,
           },
@@ -113,6 +114,7 @@ export class SettlementService {
             where: { id: userId },
             data: {
               bankAccountName: dto.bankAccountName!.trim(),
+              bankName: dto.bankName?.trim() || null,
               bankIban: iban,
               bankBic: dto.bankBic?.trim() || null,
             },

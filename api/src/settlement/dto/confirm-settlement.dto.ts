@@ -25,9 +25,16 @@ export class ConfirmSettlementDto {
   @MaxLength(100)
   bankAccountName?: string;
 
+  /** 银行名称(与我的主页「银行名称」一致) */
   @ValidateIf((o: ConfirmSettlementDto) => o.method === 'BANK_TRANSFER')
   @IsString()
-  @Matches(/^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{10,40}$/i, { message: 'IBAN 格式不正确' })
+  @MaxLength(100)
+  bankName?: string;
+
+  /** 收款银行账户(IBAN) */
+  @ValidateIf((o: ConfirmSettlementDto) => o.method === 'BANK_TRANSFER')
+  @IsString()
+  @Matches(/^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{10,40}$/i, { message: '收款银行账户格式不正确(应为 IBAN,如 FR76…)' })
   bankIban?: string;
 
   @IsOptional()

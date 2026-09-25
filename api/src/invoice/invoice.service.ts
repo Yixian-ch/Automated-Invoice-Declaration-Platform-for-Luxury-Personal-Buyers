@@ -161,6 +161,20 @@ export class InvoiceService {
           },
           matchedMerchant: { select: { id: true, name: true, taxId: true } },
           reservation: { select: { id: true, startAt: true, endAt: true, status: true } },
+          // 客户选择的结算方式(未选择时为 null)
+          settlement: {
+            select: {
+              id: true,
+              method: true,
+              status: true,
+              amount: true,
+              bankAccountName: true,
+              bankName: true,
+              bankIban: true,
+              confirmedAt: true,
+              paidAt: true,
+            },
+          },
         },
       }),
       this.prisma.invoice.count({ where }),
