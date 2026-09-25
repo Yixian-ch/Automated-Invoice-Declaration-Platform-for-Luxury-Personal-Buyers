@@ -66,3 +66,43 @@ export function checkArithmetic(
 export function arithmeticFailReason(r: ArithmeticResult, grandTotal: number): string {
   return `明细合计 ${r.lineSum?.toFixed(2)} 与总额 ${grandTotal.toFixed(2)} 不符(差 ${r.discrepancy?.toFixed(2)})`;
 }
+
+export const REASON_TRUNCATED = 'OCR 输出被截断,识别数据可能不完整,请核对明细';
+export const REASON_MODEL_BARE_FLAG = '模型标记需复核(未说明原因)';
+
+/** 模型的 needsReview 可能是 true / "true" */
+export function looseBool(v: unknown): boolean {
+  return v === true || (typeof v === 'string' && v.trim().toLowerCase() === 'true');
+}
+
+export interface MergeReviewInput {
+  modelReviewReasons: unknown;
+  modelNeedsReview: unknown;
+  arithmetic: ArithmeticResult;
+  grandTotal: number | null | undefined;
+  repaired: boolean;
+}
+
+/**
+ * 合并复核理由,规则:
+ * - 模型的算术类理由一律丢弃(服务端校验是唯一权威,避免两个互相矛盾的合计数字)
+ * - 服务端算术失败 → 加服务端理由;JSON 修复过 → 加截断理由
+ * - 模型裸 needsReview(没有留下任何非算术理由):只有当它的理由全是算术类、
+ *   且服务端已验证通过时才不采信;其它情况(没给理由、或服务端无法验证)照样标记
+ */
+export function mergeReviewReasons(input: MergeReviewInput): { needsReview: boolean; reviewReasons: string[] } {
+  const all = normalizeReviewReasons(input.modelReviewReasons);
+  const kept = all.filter((r) => !isArithmeticReason(r));
+  const reasons = new Set<string>(kept);
+
+  if (input.arithmetic.check === 'fail' && input.grandTotal) {
+    reasons.add(arithmeticFailReason(input.arithmetic, input.grandTotal));
+  }
+  if (input.repaired) reasons.add(REASON_TRUNCATED);
+
+  if (looseBool(input.modelNeedsReview) && reasons.size === 0) {
+    const onlyArithmeticAndVerified = all.length > 0 && kept.length === 0 && input.arithmetic.check === 'pass';
+    if (!onlyArithmeticAndVerified) reasons.add(REASON_MODEL_BARE_FLAG);
+  }
+  return { needsReview: reasons.size > 0, reviewReasons: Array.from(reasons) };
+}
