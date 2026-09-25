@@ -228,14 +228,17 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     // 算术校验由服务端自己算;JSON 被截断时明细已知不完整,不做校验
     const arithmetic = checkArithmetic(lineItems, grandTotal, { skip: repairedFlag });
     // 模型的理由:算术类的以服务端结果为准(服务端判失败时才保留),其余原样保留
-    const modelReasons = normalizeReviewReasons(raw.reviewReasons).filter(
-      (r) => !isArithmeticReason(r) || arithmetic.check === 'fail',
-    );
+    const allModelReasons = normalizeReviewReasons(raw.reviewReasons);
+    const modelReasons = allModelReasons.filter((r) => !isArithmeticReason(r) || arithmetic.check === 'fail');
+    // 模型的理由全是算术类、且被服务端否决了 → 它的 needsReview 也是基于错误合计给的,不再采信
+    const overruledArithmeticOnly = allModelReasons.length > 0 && modelReasons.length === 0;
     const reviewReasons = new Set<string>(modelReasons);
     if (arithmetic.check === 'fail' && grandTotal) reviewReasons.add(arithmeticFailReason(arithmetic, grandTotal));
     if (repairedFlag) reviewReasons.add('OCR 输出被截断,识别数据可能不完整,请核对明细');
-    // 模型只给了 needsReview=true 没给理由 → 也尊重,补一条通用理由
-    if (raw.needsReview === true && reviewReasons.size === 0) reviewReasons.add('模型标记需复核(未说明原因)');
+    // 模型只给了 needsReview=true 没给任何理由 → 尊重,补一条通用理由
+    if (raw.needsReview === true && reviewReasons.size === 0 && !overruledArithmeticOnly) {
+      reviewReasons.add('模型标记需复核(未说明原因)');
+    }
     const needsReview = reviewReasons.size > 0;
     const confidence = this._computeConfidence(raw, arithmetic.check === 'fail', needsReview);
     for (const li of lineItems) li.confidence = confidence;

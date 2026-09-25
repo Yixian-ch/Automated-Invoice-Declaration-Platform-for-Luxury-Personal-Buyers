@@ -35,6 +35,7 @@ describe('isArithmeticReason', () => {
   it('只识别明细合计类理由', () => {
     expect(isArithmeticReason('lineTotalSumMismatch: {"calculatedSum":11150}')).toBe(true);
     expect(isArithmeticReason('明细合计 1 与总额 2 不符')).toBe(true);
+    expect(isArithmeticReason('description: The sum of the line items (11750.00) does not match the grand total amount')).toBe(true);
     expect(isArithmeticReason('quantityDescriptionMismatch: {...}')).toBe(false);
     expect(isArithmeticReason('SIRET mismatch with barcode')).toBe(false);
     expect(isArithmeticReason('grandTotal digits partially obscured')).toBe(false);
