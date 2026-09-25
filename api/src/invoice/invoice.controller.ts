@@ -32,6 +32,7 @@ import { InvoiceService } from './invoice.service';
 import { OcrService } from '../ocr/ocr.service';
 import { DisputeCashbackDto, ResolveDisputeDto } from './dto/dispute-cashback.dto';
 import { CorrectInvoiceDto } from './dto/correct-invoice.dto';
+import { TestOcrDto } from './dto/test-ocr.dto';
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -44,9 +45,10 @@ export class InvoiceController {
     private readonly ocrService: OcrService,
   ) {}
 
+  /** 仅管理员可用的 OCR 调试入口(之前是公开的,任何人都能白嫖 Mistral 额度) */
   @Post('test-ocr')
-  @Public()
-  async testOcr(@Body() body: { content: string; mime_type: string }) {
+  @Roles(UserRole.ADMIN)
+  async testOcr(@Body() body: TestOcrDto) {
     const buf = Buffer.from(body.content, 'base64');
     return this.ocrService.processDocument(buf, body.mime_type);
   }
