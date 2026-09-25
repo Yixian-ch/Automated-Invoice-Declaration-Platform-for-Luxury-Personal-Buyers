@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
 import { findSiretsInText, normalizeSiret } from '../reservation/siret';
 import { normalizeUnitScore } from '../auto-review/auto-review.rules';
+import { parseModelJson } from './json-repair';
 
 export interface OcrLineItem {
   description: string;
@@ -88,7 +89,6 @@ You MUST output a single valid JSON object. Do not include markdown codeblocks, 
 - invoiceNumber (string or null — the unique transaction number of this receipt. On French tax-free forms (Bordereau de vente à l'exportation / BVE) it is the LONG numeric string printed directly BELOW the barcode in the top-right corner, about 20 digits, e.g. "25020582499619654442". Return digits only. Do NOT return the cerfa form number such as "N° 15021*04" — that is a form template number shared by every receipt, not the transaction number. On ordinary invoices use the number printed after "N°", "Facture", "Ticket" or "Invoice". null if no such number is present)
 - merchantTaxId (string or null — the merchant's French SIRET: a 14-digit number printed just below the merchant's postal address in the "COMMERÇANT" / merchant block, e.g. "53775858300059". Digits only, no spaces. Do NOT confuse it with the tax-free operator's number in the "OPERATEUR DE DETAXE" block. null if not present)
 - purchaseDate (string format YYYY-MM-DD — on BVE forms use "Date d'émission du BVE")
-- rawText (string — a plain-text transcription of ALL printed text on the receipt, line by line, in reading order, including every number exactly as printed. This is used as a fallback when a field above cannot be located)
 - imageQuality (number between 0 and 1 — your honest assessment of how legible the photo is: 1.0 = sharp, evenly lit, fully in frame, every digit unambiguous; 0.8 = readable with minor blur/glare; below 0.8 = parts are blurry, cut off, too dark, or digits could be misread; below 0.5 = mostly unreadable. Be strict: if you had to guess any digit of the barcode number, SIRET, date or total, score below 0.8)
 - grandTotalAmount (float, the total amount including tax — "Montant total TTC")
 - taxRefundAmount (float or null — the duty-free refund amount labelled "Montant de la détaxe" or "Montant de remboursement" on BVE/détaxe receipts; null if not present)
@@ -120,6 +120,8 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         ] as any, // 🛡️ 加强类型包容性，防止复杂的 SDK 联合类型引发 ts 编译阻塞
         responseFormat: { type: 'json_object' }, 
         temperature: 0.1,
+        // 明细多的小票 JSON 会较长;给足输出长度,避免在半截被截断
+        maxTokens: 4096,
       });
 
       const responseText = response.choices?.[0]?.message?.content;
@@ -127,11 +129,16 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         throw new Error('Empty or invalid text response from Mistral API');
       }
 
-      const cleanedJson = this._cleanJsonResponse(responseText);
+      const { value: cleanedJson, repaired } = parseModelJson(responseText);
+      if (repaired) {
+        this.logger.warn(
+          `[OcrService] Model JSON was truncated/malformed — repaired, salvaged keys: ${Object.keys(cleanedJson).join(',')}`,
+        );
+      }
       const rawText = responseText; 
       const fallbackFlags = this._fallbackRegexOcr(rawText);
 
-      return this._mapToOcrResult(cleanedJson, fallbackFlags, rawText);
+      return this._mapToOcrResult(cleanedJson, fallbackFlags, rawText, repaired);
     } catch (error) {
       this.logger.error(`Mistral OCR collection failed: ${String(error)}`);
       if (error instanceof Error) this.logger.error(error.stack);
@@ -140,14 +147,6 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
   }
 
   // ─── 内部辅助清洗与映射函数 (保持原样) ────────────────────────
-
-  private _cleanJsonResponse(text: string): Record<string, any> {
-    let clean = text.trim();
-    if (clean.startsWith('```')) {
-      clean = clean.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-    }
-    return JSON.parse(clean);
-  }
 
   private _fallbackRegexOcr(text: string): { isBve: boolean; hasMerchantHeader: boolean } {
     return {
@@ -201,11 +200,11 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     return parseFloat(Math.max(0, Math.min(1, score)).toFixed(2));
   }
 
-  private _mapToOcrResult(raw: Record<string, any>, fallbacks: any, rawText: string): OcrResult {
+  private _mapToOcrResult(raw: Record<string, any>, fallbacks: any, rawText: string, repairedFlag = false): OcrResult {
     const merchantName = raw.merchantName || null;
     const confidence = this._computeConfidence(raw);
-    // 兜底扫描用模型转写的小票全文(rawText 字段);没有就退回整个响应文本
-    const receiptText = typeof raw.rawText === 'string' && raw.rawText.trim() ? raw.rawText : rawText;
+    // 兜底扫描整个响应文本(不再让模型转写全文:太长会把 JSON 撑断)
+    const receiptText = rawText;
     const invoiceNumber = this._resolveInvoiceNumber(raw.invoiceNumber, receiptText);
     const merchantTaxId = this._resolveMerchantTaxId(raw.merchantTaxId, receiptText);
     const imageQuality = this._parseImageQuality(raw.imageQuality);
@@ -250,7 +249,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         needs_review: raw.needsReview,
         review_reasons: raw.reviewReasons,
         confidence,
-        receipt_text: typeof raw.rawText === 'string' ? raw.rawText : undefined,
+        json_repaired: repairedFlag,
         raw_text: rawText,
       },
     };

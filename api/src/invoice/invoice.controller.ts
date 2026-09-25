@@ -44,8 +44,9 @@ export class InvoiceController {
     private readonly ocrService: OcrService,
   ) {}
 
+  /** 仅管理员可用的 OCR 调试入口(之前是公开的,任何人都能白嫖 Mistral 额度) */
   @Post('test-ocr')
-  @Public()
+  @Roles(UserRole.ADMIN)
   async testOcr(@Body() body: { content: string; mime_type: string }) {
     const buf = Buffer.from(body.content, 'base64');
     return this.ocrService.processDocument(buf, body.mime_type);
