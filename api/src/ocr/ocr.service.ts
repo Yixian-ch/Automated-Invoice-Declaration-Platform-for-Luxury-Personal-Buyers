@@ -4,6 +4,7 @@ import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
 import { findSiretsInText, normalizeSiret } from '../reservation/siret';
 import { normalizeUnitScore } from '../auto-review/auto-review.rules';
 import { parseModelJson } from './json-repair';
+import { arithmeticFailReason, checkArithmetic, normalizeReviewReasons } from './ocr-normalize';
 
 export interface OcrLineItem {
   description: string;
@@ -190,53 +191,70 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
     return v === null ? undefined : parseFloat(v.toFixed(3));
   }
 
-  private _computeConfidence(raw: Record<string, any>): number {
+  private _computeConfidence(raw: Record<string, any>, arithmeticFail: boolean, needsReview: boolean): number {
     // Score based on how many of the three required fields were extracted.
     // Each missing field costs ~0.13 points from a 0.90 ceiling.
     const required = [raw.merchantName, raw.purchaseDate, raw.grandTotalAmount];
     const presentCount = required.filter(Boolean).length;
     let score = 0.50 + (presentCount / required.length) * 0.40; // 0.50 → 0.90
 
-    if (raw.arithmeticCheck === 'fail') score -= 0.15;
-    if (raw.needsReview === true) score -= 0.05;
+    // 用服务端算的算术校验和复核标记,不信模型自报的
+    if (arithmeticFail) score -= 0.15;
+    if (needsReview) score -= 0.05;
 
     return parseFloat(Math.max(0, Math.min(1, score)).toFixed(2));
   }
 
   private _mapToOcrResult(raw: Record<string, any>, fallbacks: any, rawText: string, repairedFlag = false): OcrResult {
     const merchantName = raw.merchantName || null;
-    const confidence = this._computeConfidence(raw);
     // 兜底扫描用模型转写的小票全文(rawText,放在 JSON 最后,截断时只会丢它);没有就退回整个响应文本
     const receiptText = typeof raw.rawText === 'string' && raw.rawText.trim() ? raw.rawText : rawText;
     const invoiceNumber = this._resolveInvoiceNumber(raw.invoiceNumber, receiptText);
     const merchantTaxId = this._resolveMerchantTaxId(raw.merchantTaxId, receiptText);
     const imageQuality = this._parseImageQuality(raw.imageQuality);
+
+    const rawItems: any[] = Array.isArray(raw.lineItems) ? raw.lineItems : [];
+    const grandTotal = raw.grandTotalAmount ? parseFloat(raw.grandTotalAmount) : undefined;
+
+    // 算术校验由服务端自己算,模型的 arithmeticCheck / 相关 reviewReasons 不可信
+    const arithmetic = checkArithmetic(
+      rawItems.map((item) => ({ amount_ttc: item?.amount_ttc ? parseFloat(item.amount_ttc) : 0 })),
+      grandTotal,
+    );
+    const modelReasons = normalizeReviewReasons(raw.reviewReasons).filter(
+      (r) => !/sum|total|arithmetic|合计|mismatch/i.test(r) || arithmetic.check === 'fail',
+    );
+    const reviewReasons = new Set<string>(modelReasons);
+    if (arithmetic.check === 'fail' && grandTotal) reviewReasons.add(arithmeticFailReason(arithmetic, grandTotal));
+    if (repairedFlag) reviewReasons.add('OCR 输出被截断,识别数据可能不完整,请核对明细');
+    const needsReview = arithmetic.check === 'fail' || repairedFlag || reviewReasons.size > 0;
+    const confidence = this._computeConfidence(raw, arithmetic.check === 'fail', needsReview);
+
+    const lineItems: OcrLineItem[] = rawItems.map((item: any) => ({
+      description: item?.description || 'Unknown Item',
+      brand: item?.brand || null,
+      itemCategory: item?.itemCategory || null,
+      quantity: item?.quantity ? parseInt(item.quantity, 10) : 1,
+      amount_ttc: item?.amount_ttc ? parseFloat(item.amount_ttc) : 0,
+      confidence,
+    }));
+
     return {
       imageQuality,
       merchantName,
       merchantNameConfidence: raw.merchantName ? 0.90 : 0.0,
       purchaseDate: raw.purchaseDate ? new Date(raw.purchaseDate) : undefined,
       purchaseDateConfidence: raw.purchaseDate ? 0.90 : 0.0,
-      grandTotalAmount: raw.grandTotalAmount ? parseFloat(raw.grandTotalAmount) : undefined,
+      grandTotalAmount: grandTotal,
       grandTotalAmountConfidence: raw.grandTotalAmount ? 0.90 : 0.0,
       taxRefundAmount: raw.taxRefundAmount ? parseFloat(raw.taxRefundAmount) : undefined,
       merchantTaxId,
       invoiceNumber,
       buyerName: raw.buyerName || null,
-      lineItems: (raw.lineItems || []).map((item: any) => ({
-        description: item.description || 'Unknown Item',
-        brand: item.brand || null,
-        itemCategory: item.itemCategory || null,
-        quantity: item.quantity ? parseInt(item.quantity, 10) : 1,
-        amount_ttc: item.amount_ttc ? parseFloat(item.amount_ttc) : 0,
-        confidence,
-      })),
-      arithmeticCheck: raw.arithmeticCheck || 'pass',
-      // 修复过的截断输出:后面的字段(算术校验、复核标记、明细尾部)可能丢了,强制人工核对
-      needsReview: repairedFlag ? true : (raw.needsReview ?? false),
-      reviewReasons: repairedFlag
-        ? Array.from(new Set([...(raw.reviewReasons || []), 'OCR 输出被截断,识别数据可能不完整,请核对明细']))
-        : (raw.reviewReasons || []),
+      lineItems,
+      arithmeticCheck: arithmetic.check === 'skipped' ? 'pass' : arithmetic.check,
+      needsReview,
+      reviewReasons: Array.from(reviewReasons),
       vendorName: merchantName,
       confidence,
       rawJson: {
@@ -251,9 +269,13 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         tax_refund_amount: raw.taxRefundAmount,
         buyer_name: raw.buyerName,
         line_items: raw.lineItems,
-        arithmetic_check: raw.arithmeticCheck,
-        needs_review: raw.needsReview,
-        review_reasons: raw.reviewReasons,
+        arithmetic_check: arithmetic.check,
+        arithmetic_line_sum: arithmetic.lineSum,
+        arithmetic_discrepancy: arithmetic.discrepancy,
+        arithmetic_check_model: raw.arithmeticCheck,
+        needs_review_model: raw.needsReview,
+        review_reasons_model: raw.reviewReasons,
+        review_reasons: Array.from(reviewReasons),
         confidence,
         json_repaired: repairedFlag,
         receipt_text: typeof raw.rawText === 'string' ? raw.rawText : undefined,
