@@ -1,78 +1,138 @@
 /**
- * 修复被截断 / 轻微畸形的模型 JSON 输出。
+ * 修复因 max_tokens 被截断的模型 JSON 输出。
  *
- * 模型偶尔会在 max_tokens 处被截断,或在长字符串里夹带未转义字符,
- * 直接 JSON.parse 会整个失败、OCR 任务报错。这里尽量从截断处往前回退,
- * 补齐未闭合的字符串/括号,拿回已经完整输出的字段。
+ * 只处理"末尾被截断"这一种情况(由调用方用 finishReason === 'length' 或
+ * "Unexpected end / Unterminated string" 类错误判定)。其它畸形 JSON 原样抛错,
+ * 交给上层按 OCR 失败处理,不能把半份数据当成完整结果。
+ *
+ * 做法:一次前向扫描,记录每个"安全截断点"(逗号 / 闭括号 / 闭引号之后、
+ * 且不在字符串内、不在数组元素对象内)处的括号栈;从后往前尝试补齐并解析。
  */
 
-/** 去掉 ```json 围栏,截取第一个 { 到最后一个 } */
+export class NotAnObjectError extends Error {
+  constructor() {
+    super('Model returned JSON that is not an object');
+    this.name = 'NotAnObjectError';
+  }
+}
+
+/** 取 ```json 围栏内的内容;没有围栏就从第一个 { 开始 */
 export function stripJsonFence(text: string): string {
-  let clean = text.trim();
-  // 前后的 ``` 围栏(前面可能还有一句说明文字)
-  clean = clean.replace(/^[\s\S]*?```(?:json)?\s*/i, (m) => (m.includes('{') ? m : '')).replace(/\s*```\s*$/, '').trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
+  let clean = (fenced ? fenced[1] : text).trim();
   const start = clean.indexOf('{');
   if (start > 0) clean = clean.slice(start);
   return clean;
 }
 
-/** 扫描到 text 末尾时的状态:未闭合的括号栈、是否停在字符串里 */
-function scanState(text: string): { stack: string[]; inString: boolean } {
+/** 截断类错误:JSON 在末尾戛然而止 */
+export function isTruncationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Unexpected end of JSON input|Unterminated string|Expected ',' or '}'|Expected ',' or ']'|Expected double-quoted property name/i.test(msg);
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+interface Boundary {
+  /** 截断位置(head = clean.slice(0, index)) */
+  index: number;
+  /** 截断处未闭合的括号栈 */
+  stack: string[];
+}
+
+/**
+ * 前向扫描,收集安全截断点。
+ * 跳过:字符串内部;数组元素对象内部(最外层 [ 之上还有 { ),避免留下半行明细。
+ */
+function collectBoundaries(text: string): Boundary[] {
+  const out: Boundary[] = [];
   const stack: string[] = [];
   let inString = false;
   let escaped = false;
-  for (const ch of text) {
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (inString) {
       if (escaped) escaped = false;
       else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
+      else if (ch === '"') {
+        inString = false;
+        pushIfSafe(i + 1);
+      }
       continue;
     }
     if (ch === '"') inString = true;
     else if (ch === '{' || ch === '[') stack.push(ch);
-    else if (ch === '}' || ch === ']') stack.pop();
+    else if (ch === '}' || ch === ']') {
+      stack.pop();
+      pushIfSafe(i + 1);
+    } else if (ch === ',') pushIfSafe(i + 1);
   }
-  return { stack, inString };
+  return out;
+
+  function pushIfSafe(index: number) {
+    if (stack.length === 0) return; // 根对象已闭合,无需修复
+    const firstArray = stack.indexOf('[');
+    const insideArrayElement = firstArray !== -1 && stack.slice(firstArray + 1).includes('{');
+    if (insideArrayElement) return;
+    out.push({ index, stack: [...stack] });
+  }
 }
 
-function closeOpen(text: string): string {
-  const { stack, inString } = scanState(text);
-  let out = text;
-  if (inString) out += '"';
+function closeStack(head: string, stack: string[]): string {
+  let out = head;
   for (let i = stack.length - 1; i >= 0; i--) out += stack[i] === '{' ? '}' : ']';
   return out;
 }
 
+export interface ParseOptions {
+  /** 调用方已确认输出是被长度截断的(finishReason === 'length') */
+  truncated?: boolean;
+}
+
 /**
- * 解析模型返回的 JSON;失败时从末尾往前找可用的截断点补齐再试。
- * 返回 { value, repaired };完全救不回来抛出原始解析错误。
+ * 解析模型返回的 JSON。
+ * - 正常 → { value, repaired: false }
+ * - 末尾截断(options.truncated 或错误类型判定)→ 回退到最近的安全截断点补齐
+ * - 其它畸形 / 非对象 → 抛错
  */
-export function parseModelJson(text: string): { value: Record<string, unknown>; repaired: boolean } {
+export function parseModelJson(text: string, options: ParseOptions = {}): { value: Record<string, unknown>; repaired: boolean } {
   const clean = stripJsonFence(text);
+
+  let firstError: unknown;
   try {
-    return { value: JSON.parse(clean), repaired: false };
-  } catch (firstError) {
-    // 只在值/成员边界处尝试截断:逗号、闭括号、闭引号之后
-    const minCut = Math.max(1, clean.length - 4000);
-    for (let i = clean.length; i >= minCut; i--) {
-      const prev = clean[i - 1];
-      if (prev !== ',' && prev !== '}' && prev !== ']' && prev !== '"') continue;
-      let head = clean.slice(0, i).replace(/,\s*$/, '');
-      // 截在 "key": 之后(值还没开始)→ 把这个悬空的 key 一起去掉
-      head = head.replace(/,?\s*"[^"\\]*(?:\\.[^"\\]*)*"\s*:\s*$/, '');
-      const state = scanState(head);
-      // 停在字符串中间:值被截断了,不能把半截字符串当成完整值,继续往前找
-      if (state.inString) continue;
-      // 停在数组元素对象的中间:半个明细行没有意义,继续往前找到上一个完整元素
-      const depth = state.stack.length;
-      if (depth >= 2 && state.stack[depth - 1] === '{' && state.stack[depth - 2] === '[') continue;
-      try {
-        const value = JSON.parse(closeOpen(head));
-        if (value && typeof value === 'object') return { value, repaired: true };
-      } catch {
-        // 继续往前找
-      }
-    }
-    throw firstError;
+    const value = JSON.parse(clean);
+    if (!isPlainObject(value)) throw new NotAnObjectError();
+    return { value, repaired: false };
+  } catch (err) {
+    if (err instanceof NotAnObjectError) throw err;
+    firstError = err;
   }
+
+  // 对象后面跟了一句多余的话("Note: ...")→ 截到最后一个 } 再试
+  const lastBrace = clean.lastIndexOf('}');
+  if (lastBrace > 0) {
+    try {
+      const value = JSON.parse(clean.slice(0, lastBrace + 1));
+      if (isPlainObject(value)) return { value, repaired: false };
+    } catch {
+      // 继续
+    }
+  }
+
+  if (!options.truncated && !isTruncationError(firstError)) throw firstError;
+
+  const boundaries = collectBoundaries(clean);
+  for (let b = boundaries.length - 1; b >= 0; b--) {
+    const { index, stack } = boundaries[b];
+    const head = clean.slice(0, index).replace(/,\s*$/, '');
+    try {
+      const value = JSON.parse(closeStack(head, stack));
+      if (isPlainObject(value)) return { value, repaired: true };
+    } catch {
+      // 继续往前找
+    }
+  }
+  throw firstError;
 }

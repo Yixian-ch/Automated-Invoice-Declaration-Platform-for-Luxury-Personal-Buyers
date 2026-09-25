@@ -90,6 +90,7 @@ You MUST output a single valid JSON object. Do not include markdown codeblocks, 
 - merchantTaxId (string or null — the merchant's French SIRET: a 14-digit number printed just below the merchant's postal address in the "COMMERÇANT" / merchant block, e.g. "53775858300059". Digits only, no spaces. Do NOT confuse it with the tax-free operator's number in the "OPERATEUR DE DETAXE" block. null if not present)
 - purchaseDate (string format YYYY-MM-DD — on BVE forms use "Date d'émission du BVE")
 - imageQuality (number between 0 and 1 — your honest assessment of how legible the photo is: 1.0 = sharp, evenly lit, fully in frame, every digit unambiguous; 0.8 = readable with minor blur/glare; below 0.8 = parts are blurry, cut off, too dark, or digits could be misread; below 0.5 = mostly unreadable. Be strict: if you had to guess any digit of the barcode number, SIRET, date or total, score below 0.8)
+- rawText (string — a plain-text transcription of the printed text on the receipt, line by line, including every number exactly as printed. Used only as a fallback. IMPORTANT: output this key LAST in the JSON object, after every other key, and keep it under 2000 characters)
 - grandTotalAmount (float, the total amount including tax — "Montant total TTC")
 - taxRefundAmount (float or null — the duty-free refund amount labelled "Montant de la détaxe" or "Montant de remboursement" on BVE/détaxe receipts; null if not present)
 - buyerName (string, uppercase full name of the customer/tourist)
@@ -129,10 +130,12 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         throw new Error('Empty or invalid text response from Mistral API');
       }
 
-      const { value: cleanedJson, repaired } = parseModelJson(responseText);
+      // finishReason === 'length' 表示输出被 max_tokens 截断;只有这种情况才允许修复
+      const finishReason = String(response.choices?.[0]?.finishReason ?? '');
+      const { value: cleanedJson, repaired } = parseModelJson(responseText, { truncated: finishReason === 'length' });
       if (repaired) {
         this.logger.warn(
-          `[OcrService] Model JSON was truncated/malformed — repaired, salvaged keys: ${Object.keys(cleanedJson).join(',')}`,
+          `[OcrService] Model JSON truncated (finishReason=${finishReason || '?'}) — repaired, salvaged keys: ${Object.keys(cleanedJson).join(',')}`,
         );
       }
       const rawText = responseText; 
@@ -203,8 +206,8 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
   private _mapToOcrResult(raw: Record<string, any>, fallbacks: any, rawText: string, repairedFlag = false): OcrResult {
     const merchantName = raw.merchantName || null;
     const confidence = this._computeConfidence(raw);
-    // 兜底扫描整个响应文本(不再让模型转写全文:太长会把 JSON 撑断)
-    const receiptText = rawText;
+    // 兜底扫描用模型转写的小票全文(rawText,放在 JSON 最后,截断时只会丢它);没有就退回整个响应文本
+    const receiptText = typeof raw.rawText === 'string' && raw.rawText.trim() ? raw.rawText : rawText;
     const invoiceNumber = this._resolveInvoiceNumber(raw.invoiceNumber, receiptText);
     const merchantTaxId = this._resolveMerchantTaxId(raw.merchantTaxId, receiptText);
     const imageQuality = this._parseImageQuality(raw.imageQuality);
@@ -229,8 +232,11 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         confidence,
       })),
       arithmeticCheck: raw.arithmeticCheck || 'pass',
-      needsReview: raw.needsReview ?? false,
-      reviewReasons: raw.reviewReasons || [],
+      // 修复过的截断输出:后面的字段(算术校验、复核标记、明细尾部)可能丢了,强制人工核对
+      needsReview: repairedFlag ? true : (raw.needsReview ?? false),
+      reviewReasons: repairedFlag
+        ? Array.from(new Set([...(raw.reviewReasons || []), 'OCR 输出被截断,识别数据可能不完整,请核对明细']))
+        : (raw.reviewReasons || []),
       vendorName: merchantName,
       confidence,
       rawJson: {
@@ -250,6 +256,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         review_reasons: raw.reviewReasons,
         confidence,
         json_repaired: repairedFlag,
+        receipt_text: typeof raw.rawText === 'string' ? raw.rawText : undefined,
         raw_text: rawText,
       },
     };
