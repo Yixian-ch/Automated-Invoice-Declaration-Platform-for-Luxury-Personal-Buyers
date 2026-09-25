@@ -217,6 +217,7 @@ model CashbackSettlement {
   method          SettlementMethod
   status          SettlementStatus @default(CONFIRMED)
   bankAccountName String?
+  bankName        String?
   bankIban        String?
   bankBic         String?
   partnerRef      String?

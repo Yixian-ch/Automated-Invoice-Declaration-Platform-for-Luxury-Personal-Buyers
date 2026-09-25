@@ -15,14 +15,15 @@ const NAV = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!isLoading && (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))) {
-      router.replace('/dashboard');
-    }
+    if (isLoading) return;
+    // 未登录(含退出登录后)→ 登录页;已登录但不是管理员 → 买手工作台
+    if (!user) router.replace('/login');
+    else if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') router.replace('/dashboard');
   }, [user, isLoading, router]);
 
   if (isLoading || !user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) return null;
@@ -52,6 +53,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
+        <div className="px-5 py-4 border-t border-stone-100 space-y-2">
+          <p className="text-xs text-stone-400 truncate" title={user.email}>{user.email}</p>
+          <button
+            onClick={logout}
+            className="text-sm text-stone-600 hover:text-red-600 transition-colors"
+          >
+            退出登录
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}

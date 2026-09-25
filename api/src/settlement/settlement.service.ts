@@ -104,6 +104,7 @@ export class SettlementService {
             amount,
             method: dto.method,
             bankAccountName: isBank ? dto.bankAccountName!.trim() : null,
+            bankName: isBank ? dto.bankName!.trim() : null,
             bankIban: iban,
             bankBic: isBank ? dto.bankBic?.trim() || null : null,
           },
@@ -113,8 +114,10 @@ export class SettlementService {
             where: { id: userId },
             data: {
               bankAccountName: dto.bankAccountName!.trim(),
+              bankName: dto.bankName!.trim(),
               bankIban: iban,
-              bankBic: dto.bankBic?.trim() || null,
+              // 弹窗已不收集 BIC;只有请求里带了才覆盖,避免清掉用户已保存的 BIC
+              ...(dto.bankBic !== undefined ? { bankBic: dto.bankBic.trim() || null } : {}),
             },
           });
         }

@@ -2,8 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { adminApi, AdminInvoice, InvoiceStatus, LineItem } from '@/lib/api';
+import { adminApi, AdminInvoice, InvoiceStatus, LineItem, SETTLEMENT_METHOD_LABEL, settlementStatusLabel } from '@/lib/api';
 import { toast } from 'sonner';
+
+/** 「支付方式」一行:方式 · 银行信息 · 状态;客户未选择时为"未选择" */
+function settlementSummary(inv: AdminInvoice): string {
+  const s = inv.settlement;
+  if (!s) return '未选择';
+  const parts = [SETTLEMENT_METHOD_LABEL[s.method]];
+  if (s.method === 'BANK_TRANSFER') {
+    const bits = [s.bankName, s.bankAccountName, s.bankIban ? `····${s.bankIban.slice(-4)}` : null].filter(Boolean);
+    if (bits.length) parts.push(bits.join(' / '));
+  }
+  parts.push(settlementStatusLabel(s));
+  return parts.join(' · ');
+}
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const ALL_STATUSES: InvoiceStatus[] = ['PENDING', 'DISPUTED', 'AWAITING_CONFIRMATION', 'CONFIRMED', 'REJECTED', 'APPROVED'];
@@ -238,6 +251,7 @@ export default function AdminDataPage() {
                       ['买手', `${detail.user.firstName} ${detail.user.lastName}`],
                       ['邮箱', detail.user.email],
                       ['状态', STATUS_LABEL[detail.status] ?? detail.status],
+                      ['支付方式', settlementSummary(detail)],
                     ].map(([label, value]) => (
                       <tr key={label} className="border-b border-stone-50">
                         <td className="py-1.5 pr-4 text-stone-400 whitespace-nowrap text-xs">{label}</td>
