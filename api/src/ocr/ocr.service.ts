@@ -4,7 +4,7 @@ import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
 import { findSiretsInText, normalizeSiret } from '../reservation/siret';
 import { normalizeUnitScore } from '../auto-review/auto-review.rules';
 import { parseModelJson } from './json-repair';
-import { arithmeticFailReason, checkArithmetic, normalizeReviewReasons } from './ocr-normalize';
+import { arithmeticFailReason, checkArithmetic, isArithmeticReason, normalizeReviewReasons } from './ocr-normalize';
 
 export interface OcrLineItem {
   description: string;
@@ -215,29 +215,30 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
 
     const rawItems: any[] = Array.isArray(raw.lineItems) ? raw.lineItems : [];
     const grandTotal = raw.grandTotalAmount ? parseFloat(raw.grandTotalAmount) : undefined;
-
-    // 算术校验由服务端自己算,模型的 arithmeticCheck / 相关 reviewReasons 不可信
-    const arithmetic = checkArithmetic(
-      rawItems.map((item) => ({ amount_ttc: item?.amount_ttc ? parseFloat(item.amount_ttc) : 0 })),
-      grandTotal,
-    );
-    const modelReasons = normalizeReviewReasons(raw.reviewReasons).filter(
-      (r) => !/sum|total|arithmetic|合计|mismatch/i.test(r) || arithmetic.check === 'fail',
-    );
-    const reviewReasons = new Set<string>(modelReasons);
-    if (arithmetic.check === 'fail' && grandTotal) reviewReasons.add(arithmeticFailReason(arithmetic, grandTotal));
-    if (repairedFlag) reviewReasons.add('OCR 输出被截断,识别数据可能不完整,请核对明细');
-    const needsReview = arithmetic.check === 'fail' || repairedFlag || reviewReasons.size > 0;
-    const confidence = this._computeConfidence(raw, arithmetic.check === 'fail', needsReview);
-
+    // 先解析明细(confidence 稍后统一填),算术校验直接用解析结果,避免两处解析口径漂移
     const lineItems: OcrLineItem[] = rawItems.map((item: any) => ({
       description: item?.description || 'Unknown Item',
       brand: item?.brand || null,
       itemCategory: item?.itemCategory || null,
       quantity: item?.quantity ? parseInt(item.quantity, 10) : 1,
       amount_ttc: item?.amount_ttc ? parseFloat(item.amount_ttc) : 0,
-      confidence,
+      confidence: 0,
     }));
+
+    // 算术校验由服务端自己算;JSON 被截断时明细已知不完整,不做校验
+    const arithmetic = checkArithmetic(lineItems, grandTotal, { skip: repairedFlag });
+    // 模型的理由:算术类的以服务端结果为准(服务端判失败时才保留),其余原样保留
+    const modelReasons = normalizeReviewReasons(raw.reviewReasons).filter(
+      (r) => !isArithmeticReason(r) || arithmetic.check === 'fail',
+    );
+    const reviewReasons = new Set<string>(modelReasons);
+    if (arithmetic.check === 'fail' && grandTotal) reviewReasons.add(arithmeticFailReason(arithmetic, grandTotal));
+    if (repairedFlag) reviewReasons.add('OCR 输出被截断,识别数据可能不完整,请核对明细');
+    // 模型只给了 needsReview=true 没给理由 → 也尊重,补一条通用理由
+    if (raw.needsReview === true && reviewReasons.size === 0) reviewReasons.add('模型标记需复核(未说明原因)');
+    const needsReview = reviewReasons.size > 0;
+    const confidence = this._computeConfidence(raw, arithmetic.check === 'fail', needsReview);
+    for (const li of lineItems) li.confidence = confidence;
 
     return {
       imageQuality,
@@ -252,7 +253,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       invoiceNumber,
       buyerName: raw.buyerName || null,
       lineItems,
-      arithmeticCheck: arithmetic.check === 'skipped' ? 'pass' : arithmetic.check,
+      arithmeticCheck: arithmetic.check,
       needsReview,
       reviewReasons: Array.from(reviewReasons),
       vendorName: merchantName,
