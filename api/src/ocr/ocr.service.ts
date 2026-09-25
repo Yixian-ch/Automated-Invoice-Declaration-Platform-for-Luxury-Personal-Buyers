@@ -4,7 +4,7 @@ import { Mistral } from '@mistralai/mistralai'; // ✅ Mistral SDK
 import { findSiretsInText, normalizeSiret } from '../reservation/siret';
 import { normalizeUnitScore } from '../auto-review/auto-review.rules';
 import { parseModelJson } from './json-repair';
-import { arithmeticFailReason, checkArithmetic, isArithmeticReason, normalizeReviewReasons } from './ocr-normalize';
+import { checkArithmetic, mergeReviewReasons } from './ocr-normalize';
 
 export interface OcrLineItem {
   description: string;
@@ -101,8 +101,8 @@ You MUST output a single valid JSON object. Do not include markdown codeblocks, 
     - itemCategory (string or null — standardised product category; use one of: handbag, bag, shoes, watch, jewellery, clothing, perfume, cosmetics, accessories, luggage, sunglasses, other; null if unknown)
     - quantity (integer)
     - amount_ttc (float, the line total including tax)
-
-Perform mathematical self-validation: if the sum of lineItems' amount_ttc does not equal grandTotalAmount, set "arithmeticCheck" to "fail" and flag "needsReview" as true with detailed "reviewReasons".`;
+- needsReview (boolean — true only if something on the receipt is ambiguous or unreadable that a human should check, e.g. an obscured field, handwritten corrections, or a value you had to guess. Do NOT do any arithmetic checking yourself; totals are verified by the system)
+- reviewReasons (array of short strings explaining each concern; empty array if none)`;
 
       // ✅ 调用 Mistral Chat Completion 
       const response = await this.mistral.chat.complete({
@@ -225,21 +225,16 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       confidence: 0,
     }));
 
-    // 算术校验由服务端自己算;JSON 被截断时明细已知不完整,不做校验
+    // 算术校验由服务端自己算(模型不再做自检);JSON 被截断时明细已知不完整,不做校验
     const arithmetic = checkArithmetic(lineItems, grandTotal, { skip: repairedFlag });
-    // 模型的理由:算术类的以服务端结果为准(服务端判失败时才保留),其余原样保留
-    const allModelReasons = normalizeReviewReasons(raw.reviewReasons);
-    const modelReasons = allModelReasons.filter((r) => !isArithmeticReason(r) || arithmetic.check === 'fail');
-    // 模型的理由全是算术类、且被服务端否决了 → 它的 needsReview 也是基于错误合计给的,不再采信
-    const overruledArithmeticOnly = allModelReasons.length > 0 && modelReasons.length === 0;
-    const reviewReasons = new Set<string>(modelReasons);
-    if (arithmetic.check === 'fail' && grandTotal) reviewReasons.add(arithmeticFailReason(arithmetic, grandTotal));
-    if (repairedFlag) reviewReasons.add('OCR 输出被截断,识别数据可能不完整,请核对明细');
-    // 模型只给了 needsReview=true 没给任何理由 → 尊重,补一条通用理由
-    if (raw.needsReview === true && reviewReasons.size === 0 && !overruledArithmeticOnly) {
-      reviewReasons.add('模型标记需复核(未说明原因)');
-    }
-    const needsReview = reviewReasons.size > 0;
+    const merged = mergeReviewReasons({
+      modelReviewReasons: raw.reviewReasons,
+      modelNeedsReview: raw.needsReview,
+      arithmetic,
+      grandTotal,
+      repaired: repairedFlag,
+    });
+    const needsReview = merged.needsReview;
     const confidence = this._computeConfidence(raw, arithmetic.check === 'fail', needsReview);
     for (const li of lineItems) li.confidence = confidence;
 
@@ -258,7 +253,7 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
       lineItems,
       arithmeticCheck: arithmetic.check,
       needsReview,
-      reviewReasons: Array.from(reviewReasons),
+      reviewReasons: merged.reviewReasons,
       vendorName: merchantName,
       confidence,
       rawJson: {
@@ -276,10 +271,9 @@ Perform mathematical self-validation: if the sum of lineItems' amount_ttc does n
         arithmetic_check: arithmetic.check,
         arithmetic_line_sum: arithmetic.lineSum,
         arithmetic_discrepancy: arithmetic.discrepancy,
-        arithmetic_check_model: raw.arithmeticCheck,
         needs_review_model: raw.needsReview,
         review_reasons_model: raw.reviewReasons,
-        review_reasons: Array.from(reviewReasons),
+        review_reasons: merged.reviewReasons,
         confidence,
         json_repaired: repairedFlag,
         receipt_text: typeof raw.rawText === 'string' ? raw.rawText : undefined,

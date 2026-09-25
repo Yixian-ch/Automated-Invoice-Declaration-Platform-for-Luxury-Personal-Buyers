@@ -1,4 +1,13 @@
-import { arithmeticFailReason, checkArithmetic, isArithmeticReason, normalizeReviewReasons } from './ocr-normalize';
+import {
+  REASON_MODEL_BARE_FLAG,
+  REASON_TRUNCATED,
+  arithmeticFailReason,
+  checkArithmetic,
+  isArithmeticReason,
+  looseBool,
+  mergeReviewReasons,
+  normalizeReviewReasons,
+} from './ocr-normalize';
 
 describe('normalizeReviewReasons', () => {
   it('数组原样(去空)', () => {
@@ -66,5 +75,50 @@ describe('checkArithmetic', () => {
     expect(checkArithmetic(unitPriced, 2894)).toEqual({ check: 'pass', lineSum: 2894, discrepancy: 0 });
     // 行合计口径也通过
     expect(checkArithmetic(unitPriced, 1514).check).toBe('pass');
+  });
+});
+
+describe('mergeReviewReasons', () => {
+  const pass = { check: 'pass' as const, lineSum: 11360, discrepancy: 0 };
+  const fail = { check: 'fail' as const, lineSum: 11360, discrepancy: -140 };
+  const skipped = { check: 'skipped' as const, lineSum: null, discrepancy: null };
+  const modelSumComplaint = { lineTotalSumMismatch: { calculatedSum: 11750 }, description: 'The sum of the line items does not match the grand total' };
+
+  it('模型算错合计、服务端验证通过 → 不标记,理由为空(样票场景)', () => {
+    expect(mergeReviewReasons({ modelReviewReasons: modelSumComplaint, modelNeedsReview: true, arithmetic: pass, grandTotal: 11360, repaired: false }))
+      .toEqual({ needsReview: false, reviewReasons: [] });
+  });
+
+  it('模型算错合计、服务端无法验证(skipped)→ 仍标记(裸 needsReview 生效)', () => {
+    expect(mergeReviewReasons({ modelReviewReasons: modelSumComplaint, modelNeedsReview: true, arithmetic: skipped, grandTotal: undefined, repaired: false }))
+      .toEqual({ needsReview: true, reviewReasons: [REASON_MODEL_BARE_FLAG] });
+  });
+
+  it('服务端算术失败 → 只有服务端的理由,不带模型的错误合计数字', () => {
+    const r = mergeReviewReasons({ modelReviewReasons: modelSumComplaint, modelNeedsReview: true, arithmetic: fail, grandTotal: 11500, repaired: false });
+    expect(r.needsReview).toBe(true);
+    expect(r.reviewReasons).toEqual([arithmeticFailReason(fail, 11500)]);
+  });
+
+  it('模型的非算术理由原样保留', () => {
+    const r = mergeReviewReasons({ modelReviewReasons: ['grand total digits partially obscured', 'quantityDescriptionMismatch'], modelNeedsReview: true, arithmetic: pass, grandTotal: 100, repaired: false });
+    expect(r.reviewReasons).toEqual(['grand total digits partially obscured', 'quantityDescriptionMismatch']);
+  });
+
+  it('模型只给 needsReview(true 或 "true")没给理由 → 补通用理由', () => {
+    expect(mergeReviewReasons({ modelReviewReasons: [], modelNeedsReview: true, arithmetic: pass, grandTotal: 100, repaired: false }).reviewReasons).toEqual([REASON_MODEL_BARE_FLAG]);
+    expect(mergeReviewReasons({ modelReviewReasons: undefined, modelNeedsReview: 'true', arithmetic: pass, grandTotal: 100, repaired: false }).needsReview).toBe(true);
+    expect(looseBool('TRUE')).toBe(true);
+    expect(looseBool(false)).toBe(false);
+  });
+
+  it('JSON 修复过 → 截断理由', () => {
+    expect(mergeReviewReasons({ modelReviewReasons: [], modelNeedsReview: false, arithmetic: skipped, grandTotal: 100, repaired: true }))
+      .toEqual({ needsReview: true, reviewReasons: [REASON_TRUNCATED] });
+  });
+
+  it('什么问题都没有 → 不标记', () => {
+    expect(mergeReviewReasons({ modelReviewReasons: [], modelNeedsReview: false, arithmetic: pass, grandTotal: 100, repaired: false }))
+      .toEqual({ needsReview: false, reviewReasons: [] });
   });
 });
