@@ -75,7 +75,7 @@ const MERCHANTS = [
           'cartier',
           'prada',
           'bvlgari', 'bulgari',
-          'saint laurent', 'yves saint laurent',
+          'saint laurent', 'yves saint laurent', 'ysl',
           'fendi',
           'dior', 'christian dior', 'parfums christian dior',
           'bottega veneta',
