@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -35,6 +36,9 @@ export class AuthController {
 
   /** Multipart: questionnaire fields + `passport` (first page, required) */
   @Post('register')
+  // Each sign-up writes a passport file to disk — cap scripted sign-ups per IP
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 10 * 60 * 1000 } })
   @UseInterceptors(FileInterceptor('passport', { limits: { fileSize: MAX_DOCUMENT_SIZE } }))
   register(@Body() dto: RegisterDto, @UploadedFile() passport: Express.Multer.File) {
     if (!passport) throw new BadRequestException('请上传有效护照首页');

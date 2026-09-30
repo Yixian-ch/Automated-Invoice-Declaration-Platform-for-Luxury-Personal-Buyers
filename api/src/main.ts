@@ -1,11 +1,16 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // The API is only reachable through nginx (one hop), so take the client IP
+  // from X-Forwarded-For — otherwise per-IP throttling keys on nginx's address
+  app.set('trust proxy', 1);
 
   // Increase body size limit to support base64-encoded image uploads in the OCR test endpoint
   app.use(require('express').json({ limit: '10mb' }));
