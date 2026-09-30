@@ -9,7 +9,7 @@ import {
 import { Prisma, ReservationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateReservationDto } from './dto/create-reservation.dto';
-import { compareYmd, isYmd, parisDayEnd, parisDayStart, todayInParis } from './paris-time';
+import { compareYmd, isYmd, parisDayEnd, parisDayStart } from './paris-time';
 import { normalizeSiret } from './siret';
 import { evaluateInvoiceMatch, type MatchOutcome } from './reservation-matcher';
 
@@ -30,10 +30,6 @@ export class ReservationService {
   async create(userId: string, dto: CreateReservationDto) {
     if (!isYmd(dto.startDate) || !isYmd(dto.endDate)) {
       throw new BadRequestException('日期格式不正确');
-    }
-    const today = todayInParis();
-    if (compareYmd(dto.startDate, today) < 0) {
-      throw new BadRequestException('起始日不能早于今天(巴黎时间)');
     }
     if (compareYmd(dto.endDate, dto.startDate) < 0) {
       throw new BadRequestException('结束日不能早于起始日');
