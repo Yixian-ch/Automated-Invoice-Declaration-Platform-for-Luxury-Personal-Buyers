@@ -11,6 +11,7 @@ import {
   PASSWORD_PATTERN,
   PASSWORD_RULE,
   PROFILE_DOCUMENTS,
+  PROFILE_FAQ,
   checkDocumentFile,
   isValidPhone,
   normalizePhone,
@@ -217,6 +218,17 @@ export default function RegisterPage() {
           <p className="text-xs tracking-[0.15em] uppercase text-[#B8966E] mt-1">
             Luxury Invoice Declaration Platform
           </p>
+        </div>
+
+        {/* 常见问题 */}
+        <div className="bg-white border border-stone-200 p-6 sm:p-8 mb-6 space-y-4">
+          <p className="text-xs tracking-widest uppercase text-stone-400">常见问题</p>
+          {PROFILE_FAQ.map((item) => (
+            <div key={item.q} className="space-y-1">
+              <p className="text-sm font-medium text-stone-800">{item.q}</p>
+              <p className="text-sm leading-relaxed text-stone-600">{item.a}</p>
+            </div>
+          ))}
         </div>
 
         <div className="bg-white border border-stone-200 p-6 sm:p-8">

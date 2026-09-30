@@ -12,6 +12,7 @@ import {
 import {
   GENDER_OPTIONS,
   PROFILE_DOCUMENTS,
+  PROFILE_FAQ,
   checkDocumentFile,
   isValidPhone,
 } from '@/lib/profile-fields';
@@ -344,20 +345,7 @@ export default function ProfilePage() {
         {/* 常见问题 */}
         <div className="card-luxury space-y-5">
           <p className="text-xs tracking-widest uppercase text-muted">常见问题</p>
-          {[
-            {
-              q: '资料好多，都需要填写吗？',
-              a: 'Ruichi 依照正规法律途径为大家处理返点，文件和法律缺一不可，填写完成才能通过法务审核。',
-            },
-            {
-              q: '文件过期了怎么办？',
-              a: '文件过期没关系，可以先提交文件。等到结算返点时，缴交有效的文件即可。',
-            },
-            {
-              q: '营业执照一定要本人名下吗？',
-              a: '需要导游证或营业执照，一定要本人名下，可以使用个体工商户。如果皆没有，可以挂他人名下，以他人名义返点。',
-            },
-          ].map((item) => (
+          {PROFILE_FAQ.map((item) => (
             <div key={item.q} className="space-y-1">
               <p className="text-sm font-medium text-stone-800">{item.q}</p>
               <p className="text-sm leading-relaxed text-stone-600">{item.a}</p>

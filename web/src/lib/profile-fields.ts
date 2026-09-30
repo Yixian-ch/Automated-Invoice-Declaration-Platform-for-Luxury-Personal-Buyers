@@ -77,3 +77,19 @@ export const PROFILE_DOCUMENTS: DocumentDefinition[] = [
     hint: '有效期内的导游证、个体经营证明或公司营业执照,任选其一,可以现在或结算佣金前上传。 / Valid Tourist Guide Card, Freelancer proof or Business License — upload any one now or before settling your commission.',
   },
 ];
+
+/** 常见问题 — 注册页顶部与「我的主页」共用 */
+export const PROFILE_FAQ: { q: string; a: string }[] = [
+  {
+    q: '资料好多，都需要填写吗？',
+    a: 'Ruichi 依照正规法律途径为大家处理返点，文件和法律缺一不可，填写完成才能通过法务审核。',
+  },
+  {
+    q: '文件过期了怎么办？',
+    a: '文件过期没关系，可以先提交文件。等到结算返点时，缴交有效的文件即可。',
+  },
+  {
+    q: '营业执照一定要本人名下吗？',
+    a: '需要导游证或营业执照，一定要本人名下，可以使用个体工商户。如果皆没有，可以挂他人名下，以他人名义返点。',
+  },
+];
