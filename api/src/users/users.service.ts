@@ -9,9 +9,31 @@ import { StorageService } from '../storage/storage.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Prisma, User } from '@prisma/client';
 
-export type ProfileDocumentType = 'passport' | 'business-license';
+export type ProfileDocumentType =
+  | 'passport'
+  | 'passport-signature'
+  | 'schengen-visa'
+  | 'entry-stamp'
+  | 'exit-stamp'
+  | 'business-license';
 
-const MIME_EXTENSIONS: Record<string, string> = {
+// 每种证件对应 User 上的一个存储 key 字段
+const DOCUMENT_FIELDS = {
+  passport: 'passportDocumentKey',
+  'passport-signature': 'passportSignatureKey',
+  'schengen-visa': 'schengenVisaKey',
+  'entry-stamp': 'entryStampKey',
+  'exit-stamp': 'exitStampKey',
+  'business-license': 'businessLicenseKey',
+} as const satisfies Record<ProfileDocumentType, keyof User>;
+
+export const PROFILE_DOCUMENT_TYPES = Object.keys(DOCUMENT_FIELDS) as ProfileDocumentType[];
+
+const DOCUMENT_KEY_SELECT = Object.fromEntries(
+  Object.values(DOCUMENT_FIELDS).map((f) => [f, true]),
+) as Record<(typeof DOCUMENT_FIELDS)[ProfileDocumentType], true>;
+
+export const MIME_EXTENSIONS: Record<string, string> = {
   'application/pdf': 'pdf',
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -74,6 +96,10 @@ export class UsersService {
             bankName: dto.bankName,
             bankIban: dto.bankIban?.replace(/\s+/g, '').toUpperCase(),
             bankBic: dto.bankBic,
+            gender: dto.gender,
+            nationality: dto.nationality,
+            residenceCountry: dto.residenceCountry,
+            taxResidenceCountry: dto.taxResidenceCountry,
           },
         });
         await tx.auditLog.create({
@@ -103,24 +129,24 @@ export class UsersService {
     }
   }
 
-  private documentField(type: ProfileDocumentType) {
-    return type === 'passport' ? ('passportDocumentKey' as const) : ('businessLicenseKey' as const);
+  /** Storage key for a profile document; throws on unsupported mime types */
+  documentKey(id: string, type: ProfileDocumentType, mimeType: string) {
+    const ext = MIME_EXTENSIONS[mimeType];
+    if (!ext) throw new BadRequestException('仅支持 PDF、JPEG 或 PNG 格式');
+    return `user-${id}-${type}.${ext}`;
   }
 
   async saveDocument(id: string, type: ProfileDocumentType, buffer: Buffer, mimeType: string) {
-    const ext = MIME_EXTENSIONS[mimeType];
-    if (!ext) throw new BadRequestException('仅支持 PDF、JPEG 或 PNG 格式');
-
-    const field = this.documentField(type);
+    const key = this.documentKey(id, type, mimeType);
+    const field = DOCUMENT_FIELDS[type];
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id },
-      select: { passportDocumentKey: true, businessLicenseKey: true, role: true },
+      select: { ...DOCUMENT_KEY_SELECT, role: true },
     });
 
     // Write the new file and point the DB at it before touching the old one,
     // so a failure part-way through never loses the existing document
     const oldKey = user[field];
-    const key = `user-${id}-${type}.${ext}`;
     this.storage.saveFile(key, buffer);
 
     await this.prisma.$transaction([
@@ -144,12 +170,11 @@ export class UsersService {
   }
 
   async getDocument(id: string, type: ProfileDocumentType) {
-    const field = this.documentField(type);
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id },
-      select: { passportDocumentKey: true, businessLicenseKey: true },
+      select: DOCUMENT_KEY_SELECT,
     });
-    const key = user[field];
+    const key = user[DOCUMENT_FIELDS[type]];
     if (!key || !this.storage.fileExists(key)) {
       throw new NotFoundException('文档不存在');
     }

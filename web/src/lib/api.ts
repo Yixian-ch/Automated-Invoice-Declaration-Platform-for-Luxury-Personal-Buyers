@@ -33,13 +33,21 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+export type Gender = 'FEMALE' | 'MALE' | 'OTHER';
+
 export type RegisterPayload = {
-  email: string;
-  password: string;
-  firstName: string;
   lastName: string;
-  phone?: string;
+  firstName: string;
+  gender: Gender;
+  email: string;
+  phone: string;
+  nationality: string;
+  residenceCountry: string;
+  taxResidenceCountry: string;
+  password: string;
   locale?: string;
+  /** 有效护照首页(必填) */
+  passport: File;
 };
 
 export type LoginPayload = { email: string; password: string };
@@ -58,8 +66,16 @@ export type UserProfile = {
   status: string;
   locale: string;
   phone: string | null;
+  gender: Gender | null;
+  nationality: string | null;
+  residenceCountry: string | null;
+  taxResidenceCountry: string | null;
   address: string | null;
   passportDocumentKey: string | null;
+  passportSignatureKey: string | null;
+  schengenVisaKey: string | null;
+  entryStampKey: string | null;
+  exitStampKey: string | null;
   businessLicenseKey: string | null;
   bankAccountName: string | null;
   bankName: string | null;
@@ -67,12 +83,22 @@ export type UserProfile = {
   bankBic: string | null;
 };
 
-export type ProfileDocumentType = 'passport' | 'business-license';
+export type ProfileDocumentType =
+  | 'passport'
+  | 'passport-signature'
+  | 'schengen-visa'
+  | 'entry-stamp'
+  | 'exit-stamp'
+  | 'business-license';
 
 export type UpdateProfilePayload = {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  gender?: Gender;
+  nationality?: string;
+  residenceCountry?: string;
+  taxResidenceCountry?: string;
   email?: string;
   address?: string;
   bankAccountName?: string;
@@ -82,8 +108,25 @@ export type UpdateProfilePayload = {
 };
 
 export const authApi = {
-  register: (data: RegisterPayload) =>
-    request<{ message: string }>('/auth/register', { method: 'POST', body: data }),
+  /** Multipart POST — the passport first page travels with the questionnaire */
+  register: async ({ passport, ...fields }: RegisterPayload): Promise<{ message: string }> => {
+    const formData = new FormData();
+    Object.entries(fields).forEach(([k, v]) => {
+      if (v !== undefined) formData.append(k, v);
+    });
+    formData.append('passport', passport);
+    const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: res.statusText }));
+      const message = (error as { message: string | string[] }).message;
+      throw new Error((Array.isArray(message) ? message[0] : message) ?? '注册失败');
+    }
+    return res.json();
+  },
 
   login: (data: LoginPayload) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: data }),

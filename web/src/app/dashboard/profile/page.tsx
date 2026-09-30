@@ -6,14 +6,18 @@ import { useAuth } from '@/lib/auth-context';
 import {
   authApi,
   userApi,
+  type Gender,
   type ProfileDocumentType,
 } from '@/lib/api';
+import {
+  GENDER_OPTIONS,
+  PROFILE_DOCUMENTS,
+  checkDocumentFile,
+  isValidPhone,
+} from '@/lib/profile-fields';
 import { Button } from '@/components/ui/button';
 import { NameWatermark } from '@/components/name-watermark';
 import { toast } from 'sonner';
-
-const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 type DocState = {
   uploaded: boolean;
@@ -23,6 +27,10 @@ type DocState = {
 };
 
 const EMPTY_DOC: DocState = { uploaded: false, previewUrl: null, mimeType: null, uploading: false };
+
+const EMPTY_DOCS = Object.fromEntries(
+  PROFILE_DOCUMENTS.map((d) => [d.type, EMPTY_DOC]),
+) as Record<ProfileDocumentType, DocState>;
 
 function DocumentCard({
   title,
@@ -98,16 +106,17 @@ export default function ProfilePage() {
     lastName: '',
     firstName: '',
     phone: '',
+    gender: '' as Gender | '',
+    nationality: '',
+    residenceCountry: '',
+    taxResidenceCountry: '',
     email: '',
     address: '',
     bankAccountName: '',
     bankName: '',
     bankIban: '',
   });
-  const [docs, setDocs] = useState<Record<ProfileDocumentType, DocState>>({
-    passport: EMPTY_DOC,
-    'business-license': EMPTY_DOC,
-  });
+  const [docs, setDocs] = useState<Record<ProfileDocumentType, DocState>>(EMPTY_DOCS);
 
   useEffect(() => {
     if (!isLoading && !user) router.push('/login');
@@ -156,20 +165,29 @@ export default function ProfilePage() {
           lastName: p.lastName ?? '',
           firstName: p.firstName ?? '',
           phone: p.phone ?? '',
+          gender: p.gender ?? '',
+          nationality: p.nationality ?? '',
+          residenceCountry: p.residenceCountry ?? '',
+          taxResidenceCountry: p.taxResidenceCountry ?? '',
           email: p.email ?? '',
           address: p.address ?? '',
           bankAccountName: p.bankAccountName ?? '',
           bankName: p.bankName ?? '',
           bankIban: p.bankIban ?? '',
         });
-        if (p.passportDocumentKey) loadDocument('passport');
-        if (p.businessLicenseKey) loadDocument('business-license');
+        PROFILE_DOCUMENTS.forEach((d) => {
+          if (p[d.field]) loadDocument(d.type);
+        });
       })
       .catch(() => toast.error('加载个人信息失败'));
   }, [accessToken, loadDocument]);
 
   const handleSave = async () => {
     if (!accessToken) return;
+    if (form.phone.trim() && !isValidPhone(form.phone)) {
+      toast.error('请填写带国家号的手机号码,如 +8613366666666');
+      return;
+    }
     setSaving(true);
     try {
       // Send only non-empty fields — an empty email would fail @IsEmail, and
@@ -178,6 +196,10 @@ export default function ProfilePage() {
         lastName: form.lastName.trim(),
         firstName: form.firstName.trim(),
         phone: form.phone.trim(),
+        gender: form.gender,
+        nationality: form.nationality.trim(),
+        residenceCountry: form.residenceCountry.trim(),
+        taxResidenceCountry: form.taxResidenceCountry.trim(),
         email: form.email.trim(),
         address: form.address.trim(),
         bankAccountName: form.bankAccountName.trim(),
@@ -199,12 +221,9 @@ export default function ProfilePage() {
 
   const handleUpload = async (type: ProfileDocumentType, file: File) => {
     if (!accessToken) return;
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      toast.error('仅支持 PDF、JPEG 或 PNG 格式');
-      return;
-    }
-    if (file.size > MAX_BYTES) {
-      toast.error('文件超过 10 MB 限制');
+    const problem = checkDocumentFile(file);
+    if (problem) {
+      toast.error(problem);
       return;
     }
     setDocs((prev) => ({ ...prev, [type]: { ...prev[type], uploading: true } }));
@@ -227,11 +246,14 @@ export default function ProfilePage() {
     );
   }
 
-  const fields: { key: keyof typeof form; label: string; type?: string }[] = [
+  const fields: { key: Exclude<keyof typeof form, 'gender'>; label: string; type?: string }[] = [
     { key: 'lastName', label: '姓' },
     { key: 'firstName', label: '名' },
-    { key: 'phone', label: '电话', type: 'tel' },
+    { key: 'phone', label: '手机号码(带国家号)', type: 'tel' },
     { key: 'email', label: '邮箱', type: 'email' },
+    { key: 'nationality', label: '国籍' },
+    { key: 'residenceCountry', label: '居住国家' },
+    { key: 'taxResidenceCountry', label: '税务所在国' },
     { key: 'address', label: '地址' },
     { key: 'bankAccountName', label: '收款人姓名' },
     { key: 'bankName', label: '银行名称' },
@@ -265,6 +287,23 @@ export default function ProfilePage() {
         <div className="card-luxury space-y-6">
           <p className="text-xs tracking-widest uppercase text-muted">基本信息</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-muted mb-1.5">性别</label>
+              <select
+                value={form.gender}
+                onChange={(e) => setForm((prev) => ({ ...prev, gender: e.target.value as Gender | '' }))}
+                className="input-luxury w-full"
+              >
+                <option value="" disabled>
+                  请选择
+                </option>
+                {GENDER_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {fields.map((f) => (
               <div key={f.key} className={f.key === 'address' || f.key === 'bankIban' ? 'sm:col-span-2' : ''}>
                 <label className="block text-xs text-muted mb-1.5">{f.label}</label>
@@ -290,18 +329,15 @@ export default function ProfilePage() {
         <div className="space-y-4">
           <p className="text-xs tracking-widest uppercase text-muted">证件材料</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <DocumentCard
-              title="护照"
-              hint="上传护照信息页，支持 PDF / JPEG / PNG，不超过 10 MB。"
-              doc={docs.passport}
-              onSelect={(file) => handleUpload('passport', file)}
-            />
-            <DocumentCard
-              title="营业执照"
-              hint="企业账户请上传营业执照，支持 PDF / JPEG / PNG，不超过 10 MB。"
-              doc={docs['business-license']}
-              onSelect={(file) => handleUpload('business-license', file)}
-            />
+            {PROFILE_DOCUMENTS.map((d) => (
+              <DocumentCard
+                key={d.type}
+                title={d.title}
+                hint={`${d.hint} 支持 PDF / JPEG / PNG,不超过 10 MB。`}
+                doc={docs[d.type]}
+                onSelect={(file) => handleUpload(d.type, file)}
+              />
+            ))}
           </div>
         </div>
 

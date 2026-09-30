@@ -1,13 +1,13 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
-import { authApi, UserProfile } from './api';
+import { authApi, AuthResponse, UserProfile } from './api';
 
 type AuthContextType = {
   user: UserProfile | null;
   accessToken: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<UserProfile>;
+  login: (email: string, password: string) => Promise<AuthResponse>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await authApi.login({ email, password });
     setAccessToken(res.accessToken);
     setUser(res.user);
-    return res.user;
+    return res;
   }, []);
 
   const logout = useCallback(async () => {
