@@ -74,7 +74,6 @@ export default function ReservationsPage() {
     if (!accessToken) return;
     if (!merchantId) { toast.error('请选择商家'); return; }
     if (!startDate || !endDate) { toast.error('请选择起止日期'); return; }
-    if (startDate < today) { toast.error('起始日不能早于今天(巴黎时间)'); return; }
     if (endDate < startDate) { toast.error('结束日不能早于起始日'); return; }
 
     setSubmitting(true);
@@ -184,7 +183,6 @@ export default function ReservationsPage() {
               <input
                 type="date"
                 value={startDate}
-                min={today}
                 onChange={(e) => {
                   setStartDate(e.target.value);
                   if (endDate < e.target.value) setEndDate(e.target.value);
@@ -197,7 +195,7 @@ export default function ReservationsPage() {
               <input
                 type="date"
                 value={endDate}
-                min={startDate || today}
+                min={startDate || undefined}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="input-luxury"
               />
