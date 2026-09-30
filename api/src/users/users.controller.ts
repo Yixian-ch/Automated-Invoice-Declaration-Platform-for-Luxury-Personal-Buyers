@@ -13,16 +13,15 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { UsersService, ProfileDocumentType } from './users.service';
+import { UsersService, ProfileDocumentType, PROFILE_DOCUMENT_TYPES } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { MAX_DOCUMENT_SIZE } from '../common/validation/profile-rules';
 
-const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10 MB
-const DOCUMENT_TYPES: ProfileDocumentType[] = ['passport', 'business-license'];
 
 function parseDocumentType(type: string): ProfileDocumentType {
-  if (!DOCUMENT_TYPES.includes(type as ProfileDocumentType)) {
+  if (!PROFILE_DOCUMENT_TYPES.includes(type as ProfileDocumentType)) {
     throw new BadRequestException('未知的文档类型');
   }
   return type as ProfileDocumentType;

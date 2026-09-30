@@ -18,7 +18,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const user = await login(email, password);
+      const { user } = await login(email, password);
       if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
         router.push('/admin');
       } else {

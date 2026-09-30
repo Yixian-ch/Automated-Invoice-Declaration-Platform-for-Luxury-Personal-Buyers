@@ -19,12 +19,15 @@ export default function PrivacyPage() {
       <p>In the course of your use of the Platform, we collect:</p>
       <ul className="list-disc space-y-1 pl-6">
         <li>
-          <strong>Account data</strong>: name, email address, telephone number, postal address, and
-          password (stored in encrypted form);
+          <strong>Account data</strong>: name, gender, email address, mobile telephone number,
+          nationality, country of residence, country of tax residence, postal address, and password
+          (stored in encrypted form);
         </li>
         <li>
-          <strong>Supporting documents</strong>: identity documents (passport) and business
-          documents (business licence) that you upload to your personal space;
+          <strong>Supporting documents</strong>: identity and travel documents (passport, Schengen
+          visa, Schengen entry and exit stamps) and professional documents (tourist guide card,
+          freelancer proof or business licence) that you upload at registration or in your personal
+          space;
         </li>
         <li>
           <strong>Activity data</strong>: the invoices and purchase receipts you declare, together

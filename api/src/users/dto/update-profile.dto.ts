@@ -1,4 +1,6 @@
-import { IsEmail, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { Gender } from '@prisma/client';
+import { IsCountryName, IsInternationalPhone } from '../../common/validation/profile-rules';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -12,9 +14,24 @@ export class UpdateProfileDto {
   lastName?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(30)
+  @IsInternationalPhone()
   phone?: string;
+
+  @IsOptional()
+  @IsEnum(Gender)
+  gender?: Gender;
+
+  @IsOptional()
+  @IsCountryName()
+  nationality?: string;
+
+  @IsOptional()
+  @IsCountryName()
+  residenceCountry?: string;
+
+  @IsOptional()
+  @IsCountryName()
+  taxResidenceCountry?: string;
 
   @IsOptional()
   @IsEmail()

@@ -38,10 +38,12 @@ export default function DataProtectionPage() {
 
       <LegalH2>2. Categories of Data Collected</LegalH2>
       <p>
-        The data collected includes the data required to verify your identity (name, email address,
-        geographic address, telephone number, passport), your legal status as an independent or
-        salaried business-introduction partner (business licence, certificate of incorporation and
-        similar documents), your bank details where applicable, and the invoices and purchase
+        The data collected includes the data required to verify your identity (name, gender, email
+        address, geographic address, telephone number, nationality, passport), your country of
+        residence and country of tax residence, your travel documents where applicable (Schengen
+        visa, Schengen entry and exit stamps), your legal status as an independent or salaried
+        business-introduction partner (tourist guide card, freelancer proof, business licence,
+        certificate of incorporation and similar documents), your bank details where applicable, and the invoices and purchase
         receipts you declare on the Platform.
       </p>
 

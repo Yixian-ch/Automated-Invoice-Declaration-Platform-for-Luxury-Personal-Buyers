@@ -54,6 +54,15 @@ model User {
   registeredViaInvite    Boolean       @default(false)
   passportDocumentKey    String?
   businessLicenseKey     String?
+  // 注册问卷:护照签名页(与首页不同页时单独上传)、申根签证、出入境章
+  passportSignatureKey   String?
+  schengenVisaKey        String?
+  entryStampKey          String?
+  exitStampKey           String?
+  gender                 Gender?
+  nationality            String?
+  residenceCountry       String?
+  taxResidenceCountry    String?
   address                String?
   bankAccountName        String?
   bankName               String?
@@ -310,6 +319,12 @@ enum UserRole {
 enum AccountType {
   INDIVIDUAL
   ORGANIZATION
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  OTHER
 }
 
 enum UserStatus {

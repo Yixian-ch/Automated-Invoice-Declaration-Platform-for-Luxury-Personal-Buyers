@@ -6,11 +6,13 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import { StorageService } from '../storage/storage.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { UserRole, UserStatus, AccountType } from '@prisma/client';
+import { Prisma, UserRole, UserStatus, AccountType } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -19,42 +21,64 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
+    private readonly storage: StorageService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
   ) {}
 
-  async register(dto: RegisterDto) {
-    const existing = await this.usersService.findByEmail(dto.email);
+  async register(dto: RegisterDto, passport: Express.Multer.File) {
+    const email = dto.email;
+    const existing = await this.usersService.findByEmail(email);
     if (existing) throw new ConflictException('Email already registered');
 
+    // The passport key embeds the user id, so pick the id up front and write
+    // the file before the row — a failed insert then only leaves a file to clean up
+    const id = randomUUID();
+    const passportKey = this.usersService.documentKey(id, 'passport', passport.mimetype);
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    this.storage.saveFile(passportKey, passport.buffer);
 
-    await this.prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          email: dto.email,
-          passwordHash,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          phone: dto.phone ?? null,
-          locale: dto.locale ?? 'zh',
-          role: UserRole.RESELLER,
-          accountType: AccountType.INDIVIDUAL,
-          status: UserStatus.REGISTERED,
-        },
-      });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            id,
+            email,
+            passwordHash,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            gender: dto.gender,
+            phone: dto.phone,
+            nationality: dto.nationality,
+            residenceCountry: dto.residenceCountry,
+            taxResidenceCountry: dto.taxResidenceCountry,
+            passportDocumentKey: passportKey,
+            locale: dto.locale ?? 'zh',
+            role: UserRole.RESELLER,
+            accountType: AccountType.INDIVIDUAL,
+            status: UserStatus.REGISTERED,
+          },
+        });
 
-      await tx.auditLog.create({
-        data: {
-          actorId: newUser.id,
-          actorRole: newUser.role,
-          action: 'USER_SELF_REGISTERED',
-          resourceType: 'User',
-          resourceId: newUser.id,
-          userId: newUser.id,
-        },
+        await tx.auditLog.create({
+          data: {
+            actorId: newUser.id,
+            actorRole: newUser.role,
+            action: 'USER_SELF_REGISTERED',
+            resourceType: 'User',
+            resourceId: newUser.id,
+            userId: newUser.id,
+          },
+        });
       });
-    });
+    } catch (err) {
+      this.storage.deleteFile(passportKey);
+      // Concurrent registration with the same email slipped past the pre-check
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('Email already registered');
+      }
+      throw err;
+    }
 
     return { message: '注册成功' };
   }

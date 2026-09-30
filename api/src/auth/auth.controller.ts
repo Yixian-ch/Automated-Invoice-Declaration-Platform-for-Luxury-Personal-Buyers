@@ -7,13 +7,19 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { MAX_DOCUMENT_SIZE } from '../common/validation/profile-rules';
 
 const REFRESH_COOKIE = 'refresh_token';
 const COOKIE_OPTIONS = {
@@ -28,9 +34,15 @@ const COOKIE_OPTIONS = {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  /** Multipart: questionnaire fields + `passport` (first page, required) */
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  // Each sign-up writes a passport file to disk — cap scripted sign-ups per IP
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 10 * 60 * 1000 } })
+  @UseInterceptors(FileInterceptor('passport', { limits: { fileSize: MAX_DOCUMENT_SIZE } }))
+  register(@Body() dto: RegisterDto, @UploadedFile() passport: Express.Multer.File) {
+    if (!passport) throw new BadRequestException('请上传有效护照首页');
+    return this.authService.register(dto, passport);
   }
 
   @Post('login')
